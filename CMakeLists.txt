@@ -108,6 +108,8 @@ message( STATUS "WITH_COVTEST:     ${WITH_COVTEST}")
 message( STATUS "WITH_NOISE_DEBUG: ${WITH_NOISE_DEBUG}")
 message( STATUS "USE_MACPORTS:     ${USE_MACPORTS}")
 
+set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
+
 #--------------------------------------------------------------------
 # Compiler logic
 #--------------------------------------------------------------------

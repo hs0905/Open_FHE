@@ -95,9 +95,20 @@ PolyImpl<VecType>& PolyImpl<VecType>::operator=(const PolyImpl& rhs) noexcept {
     }
     if (m_values) {
         *m_values = *rhs.m_values;
+        shadow_sync_state = rhs.shadow_sync_state;
+        if (rhs.shadow_sync_state == SHADOW_SYNCHED || rhs.shadow_sync_state == SHADOW_IS_AHEAD) {
+            if(m_values_shadow == nullptr) this->create_shadow();
+            *m_values_shadow = *rhs.m_values_shadow;
+            shadow_sync_state = SHADOW_SYNCHED;
+        }
         return *this;
     }
     m_values = std::make_unique<VecType>(*rhs.m_values);
+    shadow_sync_state = rhs.shadow_sync_state;
+    if (rhs.shadow_sync_state == SHADOW_SYNCHED || rhs.shadow_sync_state == SHADOW_IS_AHEAD) {
+        m_values_shadow = std::make_unique<VecType>(*rhs.m_values_shadow);
+        shadow_sync_state = SHADOW_SYNCHED;
+    }
     return *this;
 }
 
@@ -197,6 +208,7 @@ void PolyImpl<VecType>::SetValues(const VecType& values, Format format) {
         OPENFHE_THROW(type_error, "Parameter mismatch on SetValues for Polynomial");
     m_format = format;
     m_values = std::make_unique<VecType>(values);
+    this->indicate_modified_orig();
 }
 
 template <typename VecType>
@@ -207,29 +219,61 @@ void PolyImpl<VecType>::SetValues(VecType&& values, Format format) {
         OPENFHE_THROW(type_error, "Parameter mismatch on SetValues for Polynomial");
     m_format = format;
     m_values = std::make_unique<VecType>(std::move(values));
+    this->indicate_modified_orig();
+}
+
+template <typename VecType>
+void PolyImpl<VecType>::SetValuesShadow(const VecType& values, Format format) {
+    if (m_params->GetRootOfUnity() == Integer(0))
+        OPENFHE_THROW(type_error, "Polynomial has a 0 root of unity");
+    if (m_params->GetRingDimension() != values.GetLength() || m_params->GetModulus() != values.GetModulus())
+        OPENFHE_THROW(type_error, "Parameter mismatch on SetValues for Polynomial");
+    m_format = format;
+    m_values = std::make_unique<VecType>(values);
+    m_values_shadow = std::make_unique<VecType>(values);
+    shadow_sync_state = SHADOW_SYNCHED;
+}
+
+template <typename VecType>
+void PolyImpl<VecType>::SetValuesShadow(VecType&& values, Format format) {
+    if (m_params->GetRootOfUnity() == Integer(0))
+        OPENFHE_THROW(type_error, "Polynomial has a 0 root of unity");
+    if (m_params->GetRingDimension() != values.GetLength() || m_params->GetModulus() != values.GetModulus())
+        OPENFHE_THROW(type_error, "Parameter mismatch on SetValues for Polynomial");
+    m_format = format;
+    m_values = std::make_unique<VecType>(values);
+    m_values_shadow = std::make_unique<VecType>(std::move(values));
+    shadow_sync_state = SHADOW_SYNCHED;
 }
 
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Plus(const typename VecType::Integer& element) const {
     PolyImpl<VecType> tmp(m_params, m_format);
+    this->copy_to_shadow();
     if (m_format == Format::COEFFICIENT)
-        tmp.SetValues((*m_values).ModAddAtIndex(0, element), m_format);
+        // tmp.SetValues((*m_values).ModAddAtIndex(0, element), m_format);
+        tmp.SetValuesShadow((*m_values_shadow).ModAddAtIndex(0, element), m_format);
     else
-        tmp.SetValues((*m_values).ModAdd(element), m_format);
+        // tmp.SetValues((*m_values).ModAdd(element), m_format);
+        tmp.SetValuesShadow((*m_values_shadow).ModAdd(element), m_format);
     return tmp;
 }
 
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Minus(const typename VecType::Integer& element) const {
     PolyImpl<VecType> tmp(m_params, m_format);
-    tmp.SetValues((*m_values).ModSub(element), m_format);
+    this->copy_to_shadow();
+    // tmp.SetValues((*m_values).ModSub(element), m_format);
+    tmp.SetValuesShadow((*m_values_shadow).ModSub(element), m_format);
     return tmp;
 }
 
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Times(const typename VecType::Integer& element) const {
     PolyImpl<VecType> tmp(m_params, m_format);
-    tmp.SetValues((*m_values).ModMul(element), m_format);
+    this->copy_to_shadow();
+    // tmp.SetValues((*m_values).ModMul(element), m_format);
+    tmp.SetValuesShadow((*m_values_shadow).ModMul(element), m_format);
     return tmp;
 }
 
@@ -237,17 +281,20 @@ template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Times(NativeInteger::SignedNativeInt element) const {
     PolyImpl<VecType> tmp(m_params, m_format);
     Integer q{m_params->GetModulus()};
+    this->copy_to_shadow(); 
     if (element < 0) {
         Integer elementReduced{NativeInteger::Integer(-element)};
         if (elementReduced > q)
             elementReduced.ModEq(q);
-        tmp.SetValues((*m_values).ModMul(q - elementReduced), m_format);
+        // tmp.SetValues((*m_values).ModMul(q - elementReduced), m_format);
+        tmp.SetValuesShadow((*m_values_shadow).ModMul(q - elementReduced), m_format);
     }
     else {
         Integer elementReduced{NativeInteger::Integer(element)};
         if (elementReduced > q)
             elementReduced.ModEq(q);
-        tmp.SetValues((*m_values).ModMul(elementReduced), m_format);
+        // tmp.SetValues((*m_values).ModMul(elementReduced), m_format);
+        tmp.SetValuesShadow((*m_values_shadow).ModMul(elementReduced), m_format);
     }
     return tmp;
 }
@@ -255,7 +302,10 @@ PolyImpl<VecType> PolyImpl<VecType>::Times(NativeInteger::SignedNativeInt elemen
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Minus(const PolyImpl& rhs) const {
     PolyImpl<VecType> tmp(m_params, m_format);
-    tmp.SetValues((*m_values).ModSub(*rhs.m_values), m_format);
+    this->copy_to_shadow(); 
+    rhs.copy_to_shadow(); 
+    // tmp.SetValues((*m_values).ModSub(*rhs.m_values), m_format);
+    tmp.SetValuesShadow((*m_values_shadow).ModSub(*rhs.m_values_shadow), m_format);
     return tmp;
 }
 
@@ -287,7 +337,11 @@ template <typename VecType>
 PolyImpl<VecType>& PolyImpl<VecType>::operator+=(const PolyImpl& element) {
     if (!m_values)
         m_values = std::make_unique<VecType>(m_params->GetRingDimension(), m_params->GetModulus());
-    m_values->ModAddEq(*element.m_values);
+    // m_values->ModAddEq(*element.m_values);
+    this->copy_to_shadow();
+    element.copy_to_shadow();
+    m_values_shadow->ModAddEq(*element.m_values_shadow);
+    this->indicate_modified_shadow();
     return *this;
 }
 
@@ -295,7 +349,11 @@ template <typename VecType>
 PolyImpl<VecType>& PolyImpl<VecType>::operator-=(const PolyImpl& element) {
     if (!m_values)
         m_values = std::make_unique<VecType>(m_params->GetRingDimension(), m_params->GetModulus());
-    m_values->ModSubEq(*element.m_values);
+    // m_values->ModSubEq(*element.m_values);
+    this->copy_to_shadow();
+    element.copy_to_shadow();
+    m_values_shadow->ModSubEq(*element.m_values_shadow);
+    this->indicate_modified_shadow();
     return *this;
 }
 
@@ -372,8 +430,13 @@ PolyImpl<VecType> PolyImpl<VecType>::AutomorphismTransform(uint32_t k, const std
         OPENFHE_THROW(math_error, "Automorphism index not odd\n");
     PolyImpl<VecType> tmp(m_params, m_format, true);
     uint32_t n = m_params->GetRingDimension();
+    // for (uint32_t j = 0; j < n; ++j)
+    //     (*tmp.m_values)[j] = (*m_values)[precomp[j]];
+    this->copy_to_shadow();
+    tmp.copy_to_shadow();
     for (uint32_t j = 0; j < n; ++j)
-        (*tmp.m_values)[j] = (*m_values)[precomp[j]];
+        (*tmp.m_values_shadow)[j] = (*m_values_shadow)[precomp[j]];
+    tmp.indicate_modified_shadow();
     return tmp;
 }
 
@@ -402,7 +465,10 @@ template <typename VecType>
 void PolyImpl<VecType>::SwitchModulus(const Integer& modulus, const Integer& rootOfUnity, const Integer& modulusArb,
                                       const Integer& rootOfUnityArb) {
     if (m_values != nullptr) {
-        m_values->SwitchModulus(modulus);
+        // m_values->SwitchModulus(modulus);
+        this->copy_to_shadow();
+        m_values_shadow->SwitchModulus(modulus);
+        this->indicate_modified_shadow();
         auto c{m_params->GetCyclotomicOrder()};
         m_params = std::make_shared<PolyImpl::Params>(c, modulus, rootOfUnity, modulusArb, rootOfUnityArb);
     }
@@ -424,11 +490,17 @@ void PolyImpl<VecType>::SwitchFormat() {
 
     if (m_format != Format::COEFFICIENT) {
         m_format = Format::COEFFICIENT;
-        ChineseRemainderTransformFTT<VecType>().InverseTransformFromBitReverseInPlace(ru, co, &(*m_values));
+        // ChineseRemainderTransformFTT<VecType>().InverseTransformFromBitReverseInPlace(ru, co, &(*m_values));
+        this->copy_to_shadow();
+        ChineseRemainderTransformFTT<VecType>().InverseTransformFromBitReverseInPlace(ru, co, &(*m_values_shadow));
+        this->indicate_modified_shadow();
         return;
     }
     m_format = Format::EVALUATION;
-    ChineseRemainderTransformFTT<VecType>().ForwardTransformToBitReverseInPlace(ru, co, &(*m_values));
+    // ChineseRemainderTransformFTT<VecType>().ForwardTransformToBitReverseInPlace(ru, co, &(*m_values));
+    this->copy_to_shadow();
+    ChineseRemainderTransformFTT<VecType>().ForwardTransformToBitReverseInPlace(ru, co, &(*m_values_shadow));
+    this->indicate_modified_shadow();
 }
 
 template <typename VecType>

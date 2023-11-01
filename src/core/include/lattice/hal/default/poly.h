@@ -55,6 +55,11 @@
 
 namespace lbcrypto {
 
+#define SHADOW_NOTEXIST 0 
+#define SHADOW_SYNCHED 1 
+#define SHADOW_IS_AHEAD 2
+#define SHADOW_IS_BEHIND 3
+
 /**
  * @class PolyImpl
  * @file poly.h
@@ -76,6 +81,45 @@ public:
     using BugType           = typename PolyInterfaceType::BugType;
 
     constexpr PolyImpl() = default;
+
+    void copy_from_shadow() const {
+        if(m_values != nullptr && m_values_shadow != nullptr) {
+            if(shadow_sync_state == SHADOW_IS_AHEAD) {
+                *m_values = * m_values_shadow;    
+                shadow_sync_state = SHADOW_SYNCHED;
+            }
+        }
+    }
+    void copy_to_shadow() const {
+        if(m_values != nullptr) {
+            if(m_values_shadow == nullptr) {
+                create_shadow();   
+            }            
+            if(shadow_sync_state == SHADOW_IS_BEHIND) {
+                *m_values_shadow = * m_values;    
+                shadow_sync_state = SHADOW_SYNCHED;
+            }
+        }
+    }
+    void create_shadow() const {
+        VecType tmp(m_params->GetRingDimension());
+        m_values_shadow = std::make_unique<VecType>(tmp);
+        shadow_sync_state = SHADOW_IS_BEHIND;
+    }
+    // void discard_shadow() {        
+    //     m_values_shadow = nullptr;
+    // }
+    void indicate_modified_shadow() {        
+        shadow_sync_state = SHADOW_IS_AHEAD;
+        // if(m_values!= nullptr && m_values_shadow != nullptr)
+        //     *m_values = * m_values_shadow;    
+    }
+    void indicate_modified_orig() {        
+        shadow_sync_state = SHADOW_IS_BEHIND;
+        // if(m_values!= nullptr && m_values_shadow != nullptr)
+        //     *m_values_shadow = * m_values;    
+    }
+
 
     PolyImpl(const std::shared_ptr<Params>& params, Format format = Format::EVALUATION,
              bool initializeElementToZero = false)
@@ -103,6 +147,8 @@ public:
         : m_format{rhs.m_format},
           m_params{rhs.m_params},
           m_values{rhs.m_values ? std::make_unique<VecType>(*rhs.m_values) : nullptr} {
+        m_values_shadow = rhs.m_values_shadow ? std::make_unique<VecType>(*rhs.m_values_shadow) : nullptr;
+        shadow_sync_state = rhs.shadow_sync_state;
         PolyImpl<VecType>::SetFormat(format);
     }
 
@@ -122,22 +168,28 @@ public:
         for (uint32_t i{0}; i < vlen; ++i)
             tmp[i] = Integer(v[i]);
         m_values = std::make_unique<VecType>(tmp);
+        this->indicate_modified_orig();
         PolyImpl<VecType>::SetFormat(format);
     }
 
     PolyImpl(const PolyType& p) noexcept
         : m_format{p.m_format},
           m_params{p.m_params},
-          m_values{p.m_values ? std::make_unique<VecType>(*p.m_values) : nullptr} {}
+          m_values{p.m_values ? std::make_unique<VecType>(*p.m_values) : nullptr} {
+            m_values_shadow = p.m_values_shadow ? std::make_unique<VecType>(*p.m_values_shadow) : nullptr;
+            shadow_sync_state = p.shadow_sync_state;
+          }
 
     PolyImpl(PolyType&& p) noexcept
-        : m_format{p.m_format}, m_params{std::move(p.m_params)}, m_values{std::move(p.m_values)} {}
+        : m_format{p.m_format}, m_params{std::move(p.m_params)}, m_values{std::move(p.m_values)}, m_values_shadow{std::move(p.m_values_shadow)}, shadow_sync_state{p.shadow_sync_state} {}
 
     PolyType& operator=(const PolyType& rhs) noexcept override;
     PolyType& operator=(PolyType&& rhs) noexcept override {
         m_format = std::move(rhs.m_format);
         m_params = std::move(rhs.m_params);
         m_values = std::move(rhs.m_values);
+        m_values_shadow = std::move(rhs.m_values_shadow);
+        shadow_sync_state = rhs.shadow_sync_state;
         return *this;
     }
     PolyType& operator=(const std::vector<int32_t>& rhs);
@@ -153,6 +205,7 @@ public:
         NativeInteger m{std::numeric_limits<BasicInteger>::max()};
         auto params{std::make_shared<ILParamsImpl<NativeInteger>>(c, m, 1)};
         typename PolyImpl<VecType>::PolyNative tmp(params, m_format, true);
+        this->copy_from_shadow();
         for (usint i = 0; i < vlen; ++i)
             tmp[i] = NativeInteger((*m_values)[i]);
         return tmp;
@@ -160,16 +213,20 @@ public:
 
     void SetValues(const VecType& values, Format format) override;
     void SetValues(VecType&& values, Format format) override;
+    void SetValuesShadow(const VecType& values, Format format);
+    void SetValuesShadow(VecType&& values, Format format);
 
     void SetValuesToZero() override {
         usint r{m_params->GetRingDimension()};
         m_values = std::make_unique<VecType>(r, m_params->GetModulus());
+        this->indicate_modified_orig();
     }
 
     void SetValuesToMax() override {
         usint r{m_params->GetRingDimension()};
         auto max{m_params->GetModulus() - Integer(1)};
         m_values = std::make_unique<VecType>(r, m_params->GetModulus(), max);
+        this->indicate_modified_orig();
     }
 
     inline Format GetFormat() const final {
@@ -187,6 +244,7 @@ public:
     inline const VecType& GetValues() const final {
         if (m_values == nullptr)
             OPENFHE_THROW(not_available_error, "No values in PolyImpl");
+        this->copy_from_shadow();
         return *m_values;
     }
 
@@ -197,20 +255,24 @@ public:
     inline Integer& at(usint i) final {
         if (m_values == nullptr)
             OPENFHE_THROW(not_available_error, "No values in PolyImpl");
+        this->copy_from_shadow();
         return m_values->at(i);
     }
 
     inline const Integer& at(usint i) const final {
         if (m_values == nullptr)
             OPENFHE_THROW(not_available_error, "No values in PolyImpl");
+        this->copy_from_shadow();
         return m_values->at(i);
     }
 
     inline Integer& operator[](usint i) final {
+        this->copy_from_shadow();
         return (*m_values)[i];
     }
 
     inline const Integer& operator[](usint i) const final {
+        this->copy_from_shadow();
         return (*m_values)[i];
     }
 
@@ -222,12 +284,20 @@ public:
         if (m_format != rhs.m_format)
             OPENFHE_THROW(not_implemented_error, "Format missmatch");
         auto tmp(*this);
-        tmp.m_values->ModAddNoCheckEq(*rhs.m_values);
+        // tmp.m_values->ModAddNoCheckEq(*rhs.m_values);
+        tmp.copy_to_shadow();
+        rhs.copy_to_shadow();
+        tmp.m_values_shadow->ModAddNoCheckEq(*rhs.m_values_shadow);
+        tmp.indicate_modified_shadow();
         return tmp;
     }
     PolyImpl PlusNoCheck(const PolyImpl& rhs) const {
         auto tmp(*this);
-        tmp.m_values->ModAddNoCheckEq(*rhs.m_values);
+        // tmp.m_values->ModAddNoCheckEq(*rhs.m_values);
+        tmp.copy_to_shadow();
+        rhs.copy_to_shadow();
+        tmp.m_values_shadow->ModAddNoCheckEq(*rhs.m_values_shadow);
+        tmp.indicate_modified_shadow();
         return tmp;
     }
     PolyImpl& operator+=(const PolyImpl& element) override;
@@ -242,7 +312,10 @@ public:
 
     PolyImpl Minus(const Integer& element) const override;
     PolyImpl& operator-=(const Integer& element) override {
-        m_values->ModSubEq(element);
+        // m_values->ModSubEq(element);
+        this->copy_to_shadow();
+        m_values_shadow->ModSubEq(element);
+        this->indicate_modified_shadow();
         return *this;
     }
 
@@ -254,12 +327,20 @@ public:
         if (m_format != Format::EVALUATION || rhs.m_format != Format::EVALUATION)
             OPENFHE_THROW(not_implemented_error, "operator* for PolyImpl supported only in Format::EVALUATION");
         auto tmp(*this);
-        tmp.m_values->ModMulNoCheckEq(*rhs.m_values);
+        // tmp.m_values->ModMulNoCheckEq(*rhs.m_values);
+        tmp.copy_to_shadow();
+        rhs.copy_to_shadow();
+        tmp.m_values_shadow->ModMulNoCheckEq(*rhs.m_values_shadow);
+        tmp.indicate_modified_shadow();
         return tmp;
     }
     PolyImpl TimesNoCheck(const PolyImpl& rhs) const {
         auto tmp(*this);
-        tmp.m_values->ModMulNoCheckEq(*rhs.m_values);
+        // tmp.m_values->ModMulNoCheckEq(*rhs.m_values);
+        tmp.copy_to_shadow();
+        rhs.copy_to_shadow();
+        tmp.m_values_shadow->ModMulNoCheckEq(*rhs.m_values_shadow);
+        tmp.indicate_modified_shadow();
         return tmp;
     }
     PolyImpl& operator*=(const PolyImpl& rhs) override {
@@ -270,16 +351,24 @@ public:
         if (m_format != Format::EVALUATION || rhs.m_format != Format::EVALUATION)
             OPENFHE_THROW(not_implemented_error, "operator* for PolyImpl supported only in Format::EVALUATION");
         if (m_values) {
-            m_values->ModMulNoCheckEq(*rhs.m_values);
+            // m_values->ModMulNoCheckEq(*rhs.m_values);
+            this->copy_to_shadow();
+            rhs.copy_to_shadow();
+            m_values_shadow->ModMulNoCheckEq(*rhs.m_values_shadow);
+            this->indicate_modified_shadow();
             return *this;
         }
         m_values = std::make_unique<VecType>(m_params->GetRingDimension(), m_params->GetModulus());
+        this->indicate_modified_orig();
         return *this;
     }
 
     PolyImpl Times(const Integer& element) const override;
     PolyImpl& operator*=(const Integer& element) override {
-        m_values->ModMulEq(element);
+        // m_values->ModMulEq(element);
+        this->copy_to_shadow();
+        m_values_shadow->ModMulEq(element);
+        this->indicate_modified_shadow();
         return *this;
     }
 
@@ -352,7 +441,9 @@ public:
 protected:
     Format m_format{Format::EVALUATION};
     std::shared_ptr<Params> m_params{nullptr};
-    std::unique_ptr<VecType> m_values{nullptr};
+    mutable std::unique_ptr<VecType> m_values{nullptr};
+    mutable std::unique_ptr<VecType> m_values_shadow{nullptr};
+    mutable usint shadow_sync_state{SHADOW_NOTEXIST};
     void ArbitrarySwitchFormat();
 };
 
@@ -360,7 +451,7 @@ protected:
 template <>
 inline PolyImpl<BigVector>::PolyImpl(const std::shared_ptr<ILDCRTParams<BigInteger>>& params, Format format,
                                      bool initializeElementToZero)
-    : m_format(format), m_params(nullptr), m_values(nullptr) {
+    : m_format(format), m_params(nullptr), m_values(nullptr) , m_values_shadow(nullptr), shadow_sync_state(SHADOW_NOTEXIST) {
     const auto c = params->GetCyclotomicOrder();
     const auto m = params->GetModulus();
     m_params     = std::make_shared<ILParams>(c, m, 1);
