@@ -125,6 +125,7 @@ PolyImpl<VecType>& PolyImpl<VecType>::operator=(std::initializer_list<uint64_t> 
     }
     for (size_t j = 0; j < vlen; ++j)
         (*m_values)[j] = (j < llen) ? *(rhs.begin() + j) : ZERO;
+    this->indicate_modified_orig();
     return *this;
 }
 
@@ -148,6 +149,7 @@ PolyImpl<VecType>& PolyImpl<VecType>::operator=(const std::vector<int64_t>& rhs)
         else
             (*m_values)[j] = ZERO;
     }
+    this->indicate_modified_orig();
     return *this;
 }
 
@@ -170,6 +172,7 @@ PolyImpl<VecType>& PolyImpl<VecType>::operator=(const std::vector<int32_t>& rhs)
         else
             (*m_values)[j] = ZERO;
     }
+    this->indicate_modified_orig();
     return *this;
 }
 
@@ -182,6 +185,7 @@ PolyImpl<VecType>& PolyImpl<VecType>::operator=(std::initializer_list<std::strin
         PolyImpl<VecType>::SetValues(std::move(temp), m_format);
     }
     *m_values = rhs;
+    this->indicate_modified_orig();
     return *this;
 }
 
@@ -197,6 +201,7 @@ PolyImpl<VecType>& PolyImpl<VecType>::operator=(uint64_t val) {
     Integer ival{val};
     for (size_t i = 0; i < vlen; ++i)
         (*m_values)[i] = ival;
+    this->indicate_modified_orig();    
     return *this;
 }
 
@@ -313,14 +318,18 @@ template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::MultiplyAndRound(const typename VecType::Integer& p,
                                                       const typename VecType::Integer& q) const {
     PolyImpl<VecType> tmp(m_params, m_format);
-    tmp.SetValues((*m_values).MultiplyAndRound(p, q), m_format);
+    // tmp.SetValues((*m_values).MultiplyAndRound(p, q), m_format);
+    this->copy_to_shadow(); 
+    tmp.SetValues((*m_values_shadow).MultiplyAndRound(p, q), m_format);
     return tmp;
 }
 
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::DivideAndRound(const typename VecType::Integer& q) const {
     PolyImpl<VecType> tmp(m_params, m_format);
-    tmp.SetValues((*m_values).DivideAndRound(q), m_format);
+    // tmp.SetValues((*m_values).DivideAndRound(q), m_format);
+    this->copy_to_shadow(); 
+    tmp.SetValues((*m_values_shadow).DivideAndRound(q), m_format);
     return tmp;
 }
 
@@ -362,8 +371,12 @@ void PolyImpl<VecType>::AddILElementOne() {
     static const Integer ONE(1);
     usint vlen{m_params->GetRingDimension()};
     const auto& m{m_params->GetModulus()};
+    // for (usint i = 0; i < vlen; ++i)
+    //     (*m_values)[i].ModAddFastEq(ONE, m);
+    this->copy_to_shadow();
     for (usint i = 0; i < vlen; ++i)
-        (*m_values)[i].ModAddFastEq(ONE, m);
+        (*m_values_shadow)[i].ModAddFastEq(ONE, m);
+    this->indicate_modified_shadow();
 }
 
 template <typename VecType>
@@ -407,18 +420,23 @@ PolyImpl<VecType> PolyImpl<VecType>::AutomorphismTransform(uint32_t k) const {
     uint32_t logn{logm - 1};
     uint32_t mask{(uint32_t(1) << logn) - 1};
 
-    if (bf) {
+    this->copy_to_shadow();
+    if (bf) {        
         for (uint32_t j{0}, jk{k}; j < n; ++j, jk += (2 * k)) {
             auto&& jrev{lbcrypto::ReverseBits(j, logn)};
             auto&& idxrev{lbcrypto::ReverseBits((jk >> 1) & mask, logn)};
-            (*result.m_values)[jrev] = (*m_values)[idxrev];
+            // (*result.m_values)[jrev] = (*m_values)[idxrev];
+            (*result.m_values_shadow)[jrev] = (*m_values_shadow)[idxrev];
+            result.indicate_modified_shadow();
         }
         return result;
     }
 
     auto q{m_params->GetModulus()};
     for (uint32_t j{0}, jk{0}; j < n; ++j, jk += k)
-        (*result.m_values)[jk & mask] = ((jk >> logn) & 0x1) ? q - (*m_values)[j] : (*m_values)[j];
+        // (*result.m_values)[jk & mask] = ((jk >> logn) & 0x1) ? q - (*m_values)[j] : (*m_values)[j];
+        (*result.m_values_shadow)[jk & mask] = ((jk >> logn) & 0x1) ? q - (*m_values_shadow)[j] : (*m_values_shadow)[j];
+    result.indicate_modified_shadow();
     return result;
 }
 
@@ -443,21 +461,27 @@ PolyImpl<VecType> PolyImpl<VecType>::AutomorphismTransform(uint32_t k, const std
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::MultiplicativeInverse() const {
     PolyImpl<VecType> tmp(m_params, m_format);
-    tmp.SetValues((*m_values).ModInverse(), m_format);
+    // tmp.SetValues((*m_values).ModInverse(), m_format);
+    this->copy_to_shadow();
+    tmp.SetValues((*m_values_shadow).ModInverse(), m_format);
     return tmp;
 }
 
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::ModByTwo() const {
     PolyImpl<VecType> tmp(m_params, m_format);
-    tmp.SetValues((*m_values).ModByTwo(), m_format);
+    // tmp.SetValues((*m_values).ModByTwo(), m_format);
+    this->copy_to_shadow();
+    tmp.SetValues((*m_values_shadow).ModByTwo(), m_format);
     return tmp;
 }
 
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Mod(const Integer& modulus) const {
     PolyImpl<VecType> tmp(m_params, m_format);
-    tmp.SetValues((*m_values).Mod(modulus), m_format);
+    // tmp.SetValues((*m_values).Mod(modulus), m_format);
+    this->copy_to_shadow();    
+    tmp.SetValues((*m_values_shadow).Mod(modulus), m_format);
     return tmp;
 }
 
@@ -513,18 +537,25 @@ void PolyImpl<VecType>::ArbitrarySwitchFormat() {
     const auto& co = m_params->GetCyclotomicOrder();
     if (m_format == Format::COEFFICIENT) {
         m_format = Format::EVALUATION;
-        auto&& v = ChineseRemainderTransformArb<VecType>().ForwardTransform(*m_values, lr, bm, br, co);
-        m_values = std::make_unique<VecType>(v);
+        // auto&& v = ChineseRemainderTransformArb<VecType>().ForwardTransform(*m_values, lr, bm, br, co);
+        // m_values = std::make_unique<VecType>(v);
+        this->copy_to_shadow();
+        auto&& v = ChineseRemainderTransformArb<VecType>().ForwardTransform(*m_values_shadow, lr, bm, br, co);
+        m_values_shadow = std::make_unique<VecType>(v);
     }
     else {
         m_format = Format::COEFFICIENT;
-        auto&& v = ChineseRemainderTransformArb<VecType>().InverseTransform(*m_values, lr, bm, br, co);
-        m_values = std::make_unique<VecType>(v);
+        // auto&& v = ChineseRemainderTransformArb<VecType>().InverseTransform(*m_values, lr, bm, br, co);
+        // m_values = std::make_unique<VecType>(v);
+        this->copy_to_shadow();
+        auto&& v = ChineseRemainderTransformArb<VecType>().InverseTransform(*m_values_shadow, lr, bm, br, co);
+        m_values_shadow = std::make_unique<VecType>(v);
     }
 }
 
 template <typename VecType>
 std::ostream& operator<<(std::ostream& os, const PolyImpl<VecType>& p) {
+    p.copy_from_shadow();
     if (p.m_values != nullptr) {
         os << *(p.m_values);
         os << " mod:" << (p.m_values)->GetModulus() << std::endl;
@@ -542,10 +573,12 @@ void PolyImpl<VecType>::MakeSparse(uint32_t wFactor) {
     static const Integer ZERO(0);
     if (m_values != nullptr) {
         uint32_t vlen{m_params->GetRingDimension()};
+        this->copy_from_shadow();
         for (uint32_t i = 0; i < vlen; ++i) {
             if (i % wFactor != 0)
                 (*m_values)[i] = ZERO;
         }
+        this->copy_to_shadow();
     }
 }
 
@@ -553,6 +586,7 @@ template <typename VecType>
 bool PolyImpl<VecType>::InverseExists() const {
     static const Integer ZERO(0);
     usint vlen{m_params->GetRingDimension()};
+    this->copy_from_shadow();
     for (usint i = 0; i < vlen; ++i) {
         if ((*m_values)[i] == ZERO)
             return false;
@@ -566,6 +600,7 @@ double PolyImpl<VecType>::Norm() const {
     const auto& q{m_params->GetModulus()};
     const auto& half{q >> 1};
     Integer maxVal{}, minVal{q};
+    this->copy_from_shadow();
     for (usint i = 0; i < vlen; i++) {
         auto& val = (*m_values)[i];
         if (val > half)
