@@ -68,8 +68,8 @@ namespace lbcrypto {
 template <typename VecType>
 class ShadowType {
     public:
-        // mutable std::shared_ptr<VecType> m_values{nullptr};   
-        mutable VecType m_values;
+        mutable std::shared_ptr<VecType> m_values{nullptr};   
+        mutable usint shadow_sync_state{SHADOW_NOTEXIST};    
 }; 
 
 template <typename VecType>
@@ -90,43 +90,51 @@ public:
     constexpr PolyImpl() = default;
 
     void copy_from_shadow() const {
-        if(m_values != nullptr && m_values_shadow != nullptr) {
-            if(shadow_sync_state == SHADOW_IS_AHEAD) {
-                *m_values = m_values_shadow->m_values;
-                shadow_sync_state = SHADOW_SYNCHED;
+        if(m_values != nullptr) {
+            if(m_values_shadow.shadow_sync_state == SHADOW_IS_AHEAD) {
+                *m_values = *m_values_shadow.m_values;
+                m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
             }
         }
     }
     void copy_to_shadow() const {
         if(m_values != nullptr) {
-            if(m_values_shadow == nullptr) {
+            if(m_values_shadow.shadow_sync_state == SHADOW_NOTEXIST) {
                 create_shadow();   
-                shadow_sync_state = SHADOW_IS_BEHIND;
             }            
-            if(shadow_sync_state == SHADOW_IS_BEHIND) {
-                m_values_shadow->m_values = * m_values;    
-                shadow_sync_state = SHADOW_SYNCHED;
+            if(m_values_shadow.shadow_sync_state == SHADOW_IS_BEHIND) {
+                *m_values_shadow.m_values = * m_values;    
+                m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
             }
         }
     }
     void copy_from_other_shadow(ShadowType<VecType>& other) {
-        m_values_shadow->m_values = other.m_values;
+        if(!m_values_shadow.m_values) {
+            OPENFHE_THROW(not_available_error, "shadow not created");
+        }
+        else {
+            *m_values_shadow.m_values = *other.m_values;
+            m_values_shadow.shadow_sync_state = other.shadow_sync_state;
+        }
     }
     void create_shadow() const {
         // VecType tmp(m_params->GetRingDimension());
-        m_values_shadow = std::make_shared<ShadowType<VecType>>();
         // m_values_shadow->m_values = tmp;
+        m_values_shadow.m_values = std::make_shared<VecType>(m_params->GetRingDimension());
+        m_values_shadow.shadow_sync_state = SHADOW_IS_BEHIND;
     }
-    // void discard_shadow() {        
-    //     m_values_shadow = nullptr;
-    // }
+    void discard_shadow() {        
+        m_values_shadow.m_values = nullptr;
+        m_values_shadow.shadow_sync_state = SHADOW_NOTEXIST;
+    }
     void indicate_modified_shadow() {        
-        shadow_sync_state = SHADOW_IS_AHEAD;
+        m_values_shadow.shadow_sync_state = SHADOW_IS_AHEAD;
         // if(m_values!= nullptr && m_values_shadow != nullptr)
         //     *m_values = * m_values_shadow;    
     }
     void indicate_modified_orig() {        
-        shadow_sync_state = SHADOW_IS_BEHIND;
+        if( m_values_shadow.shadow_sync_state != SHADOW_NOTEXIST)
+            m_values_shadow.shadow_sync_state = SHADOW_IS_BEHIND;
         // if(m_values!= nullptr && m_values_shadow != nullptr)
         //     *m_values_shadow = * m_values;    
     }
@@ -158,13 +166,13 @@ public:
         : m_format{rhs.m_format},
           m_params{rhs.m_params},
           m_values{rhs.m_values ? std::make_unique<VecType>(*rhs.m_values) : nullptr} {
-        // m_values_shadow = rhs.m_values_shadow ? std::make_unique<VecType>(*rhs.m_values_shadow) : nullptr;
-        if(rhs.m_values_shadow) {
+        if(rhs.m_values_shadow.shadow_sync_state != SHADOW_NOTEXIST) {
             this->create_shadow();
-            this->copy_from_other_shadow(*rhs.m_values_shadow);
+            this->copy_from_other_shadow(rhs.m_values_shadow);
         }
-        else m_values_shadow = nullptr;
-        shadow_sync_state = rhs.shadow_sync_state;
+        else {
+            this->m_values_shadow.shadow_sync_state = SHADOW_NOTEXIST;
+        }
         PolyImpl<VecType>::SetFormat(format);
     }
 
@@ -192,25 +200,24 @@ public:
         : m_format{p.m_format},
           m_params{p.m_params},
           m_values{p.m_values ? std::make_unique<VecType>(*p.m_values) : nullptr} {
-            // m_values_shadow = p.m_values_shadow ? std::make_unique<VecType>(*p.m_values_shadow) : nullptr;
-            if(p.m_values_shadow) {
+            if(p.m_values_shadow.shadow_sync_state != SHADOW_NOTEXIST) {
                 this->create_shadow();
-                this->copy_from_other_shadow(*p.m_values_shadow);
+                this->copy_from_other_shadow(p.m_values_shadow);
             }
-            else m_values_shadow = nullptr;
-            shadow_sync_state = p.shadow_sync_state;
+            else {
+                this->m_values_shadow.shadow_sync_state = SHADOW_NOTEXIST;
+            }
           }
 
     PolyImpl(PolyType&& p) noexcept
-        : m_format{p.m_format}, m_params{std::move(p.m_params)}, m_values{std::move(p.m_values)}, m_values_shadow{std::move(p.m_values_shadow)}, shadow_sync_state{p.shadow_sync_state} {}
+        : m_format{p.m_format}, m_params{std::move(p.m_params)}, m_values{std::move(p.m_values)}, m_values_shadow{p.m_values_shadow} {}
 
     PolyType& operator=(const PolyType& rhs) noexcept override;
     PolyType& operator=(PolyType&& rhs) noexcept override {
         m_format = std::move(rhs.m_format);
         m_params = std::move(rhs.m_params);
         m_values = std::move(rhs.m_values);
-        m_values_shadow = std::move(rhs.m_values_shadow);
-        shadow_sync_state = rhs.shadow_sync_state;
+        m_values_shadow = rhs.m_values_shadow;
         return *this;
     }
     PolyType& operator=(const std::vector<int32_t>& rhs);
@@ -308,7 +315,7 @@ public:
         // tmp.m_values->ModAddNoCheckEq(*rhs.m_values);
         tmp.copy_to_shadow();
         rhs.copy_to_shadow();
-        tmp.m_values_shadow->m_values.ModAddNoCheckEq(rhs.m_values_shadow->m_values);
+        tmp.m_values_shadow.m_values->ModAddNoCheckEq(*rhs.m_values_shadow.m_values);
         tmp.indicate_modified_shadow();
         return tmp;
     }
@@ -317,7 +324,7 @@ public:
         // tmp.m_values->ModAddNoCheckEq(*rhs.m_values);
         tmp.copy_to_shadow();
         rhs.copy_to_shadow();
-        tmp.m_values_shadow->m_values.ModAddNoCheckEq(rhs.m_values_shadow->m_values);
+        tmp.m_values_shadow.m_values->ModAddNoCheckEq(*rhs.m_values_shadow.m_values);
         tmp.indicate_modified_shadow();
         return tmp;
     }
@@ -335,7 +342,7 @@ public:
     PolyImpl& operator-=(const Integer& element) override {
         // m_values->ModSubEq(element);
         this->copy_to_shadow();
-        m_values_shadow->m_values.ModSubEq(element);
+        m_values_shadow.m_values->ModSubEq(element);
         this->indicate_modified_shadow();
         return *this;
     }
@@ -351,7 +358,7 @@ public:
         // tmp.m_values->ModMulNoCheckEq(*rhs.m_values);
         tmp.copy_to_shadow();
         rhs.copy_to_shadow();
-        tmp.m_values_shadow->m_values.ModMulNoCheckEq(rhs.m_values_shadow->m_values);
+        tmp.m_values_shadow.m_values->ModMulNoCheckEq(*rhs.m_values_shadow.m_values);
         tmp.indicate_modified_shadow();
         return tmp;
     }
@@ -360,7 +367,7 @@ public:
         // tmp.m_values->ModMulNoCheckEq(*rhs.m_values);
         tmp.copy_to_shadow();
         rhs.copy_to_shadow();
-        tmp.m_values_shadow->m_values.ModMulNoCheckEq(rhs.m_values_shadow->m_values);
+        tmp.m_values_shadow.m_values->ModMulNoCheckEq(*rhs.m_values_shadow.m_values);
         tmp.indicate_modified_shadow();
         return tmp;
     }
@@ -375,7 +382,7 @@ public:
             // m_values->ModMulNoCheckEq(*rhs.m_values);
             this->copy_to_shadow();
             rhs.copy_to_shadow();
-            m_values_shadow->m_values.ModMulNoCheckEq(rhs.m_values_shadow->m_values);
+            m_values_shadow.m_values->ModMulNoCheckEq(*rhs.m_values_shadow.m_values);
             this->indicate_modified_shadow();
             return *this;
         }
@@ -388,7 +395,7 @@ public:
     PolyImpl& operator*=(const Integer& element) override {
         // m_values->ModMulEq(element);
         this->copy_to_shadow();
-        m_values_shadow->m_values.ModMulEq(element);
+        m_values_shadow.m_values->ModMulEq(element);
         this->indicate_modified_shadow();
         return *this;
     }
@@ -463,8 +470,7 @@ protected:
     Format m_format{Format::EVALUATION};
     std::shared_ptr<Params> m_params{nullptr};
     mutable std::unique_ptr<VecType> m_values{nullptr};
-    mutable std::shared_ptr<ShadowType<VecType>> m_values_shadow{nullptr};
-    mutable usint shadow_sync_state{SHADOW_NOTEXIST};
+    mutable ShadowType<VecType> m_values_shadow;
     void ArbitrarySwitchFormat();
 };
 
@@ -472,7 +478,7 @@ protected:
 template <>
 inline PolyImpl<BigVector>::PolyImpl(const std::shared_ptr<ILDCRTParams<BigInteger>>& params, Format format,
                                      bool initializeElementToZero)
-    : m_format(format), m_params(nullptr), m_values(nullptr) , m_values_shadow(nullptr), shadow_sync_state(SHADOW_NOTEXIST) {
+    : m_format(format), m_params(nullptr), m_values(nullptr) {
     const auto c = params->GetCyclotomicOrder();
     const auto m = params->GetModulus();
     m_params     = std::make_shared<ILParams>(c, m, 1);
