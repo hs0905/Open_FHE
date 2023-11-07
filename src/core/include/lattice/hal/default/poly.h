@@ -105,7 +105,10 @@ public:
 
     void copy_to_shadow() const {
         if(m_values == nullptr) {
-            OPENFHE_THROW(not_available_error, "m_values not created");
+            if(m_values_shadow.shadow_sync_state != SHADOW_IS_AHEAD) {
+                OPENFHE_THROW(not_available_error, "m_values not created");
+            }        
+            return;
         }
 
         if(m_values_shadow.shadow_sync_state == SHADOW_NOTEXIST) {
@@ -416,13 +419,7 @@ public:
     }
 
     PolyImpl Times(const Integer& element) const override;
-    PolyImpl& operator*=(const Integer& element) override {
-        // m_values->ModMulEq(element);
-        this->copy_from_shadow();
-        m_values->ModMulEq(element);
-        this->indicate_modified_orig();
-        return *this;
-    }
+    PolyImpl& operator*=(const Integer& element) override; 
 
     PolyImpl Times(NativeInteger::SignedNativeInt element) const override;
 #if NATIVEINT != 64
