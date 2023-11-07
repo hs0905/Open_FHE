@@ -286,6 +286,62 @@ PolyImpl<VecType> PolyImpl<VecType>::Times(const typename VecType::Integer& elem
     return tmp;
 }
 
+void PlainModMulScalar(uint64_t* res, const uint64_t* op1, uint64_t modulus, uint64_t scalar, size_t size) {
+    uint64_t numerator[3]{ 0, 0, 1 };
+    uint64_t quotient[3]{ 0, 0, 0 };
+    divide_uint192_inplace(numerator, modulus, quotient);
+    uint64_t pq0 = quotient[0];
+    uint64_t pq1 = quotient[1];
+    
+    scalar = scalar >= modulus ? scalar % modulus : scalar;
+    
+    for(size_t i=0; i<size; i++){
+        const uint64_t x = op1[i];
+        unsigned long long z[2];
+
+        uint128_t product = static_cast<unsigned uint128_t>(x) * scalar;
+        z[0] = static_cast<unsigned long long>(product);                        
+        z[1] = static_cast<unsigned long long>(product >> 64);
+
+        unsigned long long tmp1, tmp2[2], tmp3, carry;
+
+        // Multiply input and const_ratio
+        // Round 1
+        // multiply_uint64_hw64(z[0], pq0, &carry);
+        carry = static_cast<unsigned long long>(                                        
+        ((static_cast<uint128_t>(z[0])                              
+        * static_cast<uint128_t>(pq0)) >> 64));                    
+
+        // multiply_uint64(z[0], pq1, tmp2);
+        product = static_cast<uint128_t>(z[0]) * pq1;
+        tmp2[0] = static_cast<unsigned long long>(product);                        
+        tmp2[1] = static_cast<unsigned long long>(product >> 64);
+
+        // tmp3 = tmp2[1] + add_uint64(tmp2[0], carry, &tmp1);
+        tmp1 = tmp2[0] + carry;
+        tmp3 = tmp2[1] + static_cast<unsigned char>(tmp1 < tmp2[0]);
+
+        // Round 2
+        // multiply_uint64(z[1], pq0, tmp2);
+        product = static_cast<uint128_t>(z[1]) * pq0;
+        tmp2[0] = static_cast<unsigned long long>(product);                        
+        tmp2[1] = static_cast<unsigned long long>(product >> 64);
+
+        // carry = tmp2[1] + add_uint64(tmp1, tmp2[0], &tmp1);
+        tmp1 = tmp1 + tmp2[0];
+        carry = tmp2[1] + static_cast<unsigned char>(tmp1 < tmp2[0]);
+
+        // This is all we care about
+        tmp1 = z[1] * pq1 + tmp3 + carry;
+
+        // Barrett subtraction
+        tmp3 = z[0] - tmp1 * modulus;
+
+        // One more subtraction is enough
+        res[i] = tmp3 >= modulus ? tmp3 - modulus : tmp3;
+    }
+}
+
 //c++ explicit template specialization!
 template <>
 PolyImpl<NativeVector> PolyImpl<NativeVector>::Times(const typename NativeVector::Integer& element) const {
@@ -293,66 +349,18 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Times(const typename NativeVector
     tmp.create_shadow();
 
     this->copy_to_shadow();
-    {
-        uint64_t* res       = tmp.m_values_shadow.get_ptr();
-        const uint64_t* op1 = m_values_shadow.get_ptr();
-        uint64_t numerator[3]{ 0, 0, 1 };
-        uint64_t quotient[3]{ 0, 0, 0 };
-        uint64_t modulus = m_values->m_modulus.m_value;
-        divide_uint192_inplace(numerator, modulus, quotient);
-        uint64_t pq0 = quotient[0];
-        uint64_t pq1 = quotient[1];
-        uint64_t scalar = element.m_value >= modulus ? element.m_value % modulus : element.m_value;
-        for(size_t i=0; i<m_values_shadow.m_values->size(); i++){
-            const uint64_t x = op1[i];
-            unsigned long long z[2];
-
-            uint128_t product = static_cast<unsigned uint128_t>(x) * scalar;
-            z[0] = static_cast<unsigned long long>(product);                        
-            z[1] = static_cast<unsigned long long>(product >> 64);
-
-            unsigned long long tmp1, tmp2[2], tmp3, carry;
-
-            // Multiply input and const_ratio
-            // Round 1
-            // multiply_uint64_hw64(z[0], pq0, &carry);
-            carry = static_cast<unsigned long long>(                                        
-            ((static_cast<uint128_t>(z[0])                              
-            * static_cast<uint128_t>(pq0)) >> 64));                    
-
-            // multiply_uint64(z[0], pq1, tmp2);
-            product = static_cast<uint128_t>(z[0]) * pq1;
-            tmp2[0] = static_cast<unsigned long long>(product);                        
-            tmp2[1] = static_cast<unsigned long long>(product >> 64);
-
-            // tmp3 = tmp2[1] + add_uint64(tmp2[0], carry, &tmp1);
-            tmp1 = tmp2[0] + carry;
-            tmp3 = tmp2[1] + static_cast<unsigned char>(tmp1 < tmp2[0]);
-
-            // Round 2
-            // multiply_uint64(z[1], pq0, tmp2);
-            product = static_cast<uint128_t>(z[1]) * pq0;
-            tmp2[0] = static_cast<unsigned long long>(product);                        
-            tmp2[1] = static_cast<unsigned long long>(product >> 64);
-
-            // carry = tmp2[1] + add_uint64(tmp1, tmp2[0], &tmp1);
-            tmp1 = tmp1 + tmp2[0];
-            carry = tmp2[1] + static_cast<unsigned char>(tmp1 < tmp2[0]);
-
-            // This is all we care about
-            tmp1 = z[1] * pq1 + tmp3 + carry;
-
-            // Barrett subtraction
-            tmp3 = z[0] - tmp1 * modulus;
-
-            // One more subtraction is enough
-            res[i] = tmp3 >= modulus ? tmp3 - modulus : tmp3;
-        }
-    }
+    
+    PlainModMulScalar(
+        tmp.m_values_shadow.get_ptr(),
+        m_values_shadow.get_ptr(),
+        m_values->m_modulus.m_value,
+        element.m_value,
+        m_values_shadow.m_values->size()
+    );
+    
     tmp.indicate_modified_shadow();
     
     // tmp.SetValues((*m_values).ModMul(element), m_format);
-    // tmp.SetValuesShadow((*m_values_shadow.m_values).ModMul(element), m_format);
     return tmp;
 }
 
@@ -377,6 +385,54 @@ PolyImpl<VecType> PolyImpl<VecType>::Times(NativeInteger::SignedNativeInt elemen
     }
     return tmp;
 }
+
+//c++ explicit template specialization!
+template <>
+PolyImpl<NativeVector> PolyImpl<NativeVector>::Times(NativeInteger::SignedNativeInt element) const {
+    PolyImpl<NativeVector> tmp(m_params, m_format);
+    tmp.create_shadow();
+
+    Integer q{m_params->GetModulus()};
+    
+    this->copy_to_shadow();
+    
+    if (element < 0) {
+        Integer elementReduced{NativeInteger::Integer(-element)};
+        if (elementReduced > q)
+            elementReduced.ModEq(q);
+        
+        PlainModMulScalar(
+            tmp.m_values_shadow.get_ptr(),
+            m_values_shadow.get_ptr(),
+            m_values->m_modulus.m_value,
+            -element,
+            m_values_shadow.m_values->size()
+        );
+        
+        tmp.indicate_modified_shadow();
+
+        // tmp.SetValues((*m_values).ModMul(q - elementReduced), m_format);
+    }
+    else {
+        Integer elementReduced{NativeInteger::Integer(element)};
+        if (elementReduced > q)
+            elementReduced.ModEq(q);
+
+        PlainModMulScalar(
+            tmp.m_values_shadow.get_ptr(),
+            m_values_shadow.get_ptr(),
+            m_values->m_modulus.m_value,
+            elementReduced.m_value,
+            m_values_shadow.m_values->size()
+        );
+        
+        tmp.indicate_modified_shadow();
+        
+        // tmp.SetValues((*m_values).ModMul(elementReduced), m_format);        
+    }
+    return tmp;
+}
+
 
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Minus(const PolyImpl& rhs) const {
