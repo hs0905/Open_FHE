@@ -242,6 +242,11 @@ public:
                                                const VecType& preconRootOfUnityInverseTable,
                                                const IntType& cycloOrderInv, const IntType& preconCycloOrderInv,
                                                VecType* element);
+
+    void InverseTransformFromBitReverseInPlace(const VecType& rootOfUnityInverseTable,
+                                               const VecType& preconRootOfUnityInverseTable,
+                                               const IntType& cycloOrderInv, const IntType& preconCycloOrderInv,
+                                               uint64_t* element, size_t N, uint64_t modulus);
 };
 
 /**
@@ -322,6 +327,8 @@ public:
    * @see NumberTheoreticTransform::InverseTransformFromBitReverseInPlace()
    */
     void InverseTransformFromBitReverseInPlace(const IntType& rootOfUnity, const usint CycloOrder, VecType* element);
+    
+    void InverseTransformFromBitReverseInPlace(const IntType& rootOfUnity, const usint CycloOrder, uint64_t* element, size_t N, uint64_t modulus);
 
     /**
    * Precomputation of root of unity tables for transforms in the ring

@@ -782,12 +782,10 @@ void PolyImpl<NativeVector>::SwitchFormat() {
 
     if (m_format != Format::COEFFICIENT) {        
         m_format = Format::COEFFICIENT;
-        this->copy_from_shadow();
-        if (!m_values)
-            OPENFHE_THROW(not_available_error, "Poly switch format to empty values");
 
-        ChineseRemainderTransformFTT<NativeVector>().InverseTransformFromBitReverseInPlace(ru, co, &(*m_values));
-        this->indicate_modified_orig();
+        this->copy_to_shadow();
+        ChineseRemainderTransformFTT<NativeVector>().InverseTransformFromBitReverseInPlace(ru, co, m_values_shadow.get_ptr(),this->GetLength(),m_params->GetModulus().m_value);
+        this->indicate_modified_shadow();
         return;
     }
 

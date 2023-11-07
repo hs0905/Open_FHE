@@ -604,6 +604,72 @@ void NumberTheoreticTransformNat<VecType>::InverseTransformFromBitReverseInPlace
     }
 }
 
+
+template <typename VecType>
+void NumberTheoreticTransformNat<VecType>::InverseTransformFromBitReverseInPlace(
+    const VecType& rootOfUnityInverseTable, const VecType& preconRootOfUnityInverseTable, const IntType& cycloOrderInv,
+    const IntType& preconCycloOrderInv, uint64_t* element, size_t N, uint64_t modulus) {
+    uint64_t x;
+    uint64_t y;
+    uint64_t p = modulus;
+    uint64_t scalar = cycloOrderInv.ConvertToInt();
+    uint64_t scalar_div_p = preconCycloOrderInv.ConvertToInt();
+    
+    size_t m =  N >> 1;
+    size_t gap = 1;
+
+    size_t root_idx = 0;
+
+    for (; m >= 1; m >>= 1) {
+        size_t offset = 0;
+
+        for (size_t i = 0; i < m; i++)  {
+        root_idx++;
+        uint64_t r_quotient = preconRootOfUnityInverseTable[root_idx].ConvertToInt();
+        uint64_t r_operand = rootOfUnityInverseTable[root_idx].ConvertToInt();
+        
+        for (size_t j = 0; j < gap; j++)
+        {
+            x = element[offset + j];
+            y = element[offset + gap+ j];
+            
+            uint64_t x_y = x + y;
+
+            uint64_t tmp1 = x_y;
+            if(x_y >= 2*p) tmp1= x_y - 2*p;   //guard
+
+            uint64_t tmp2 = x + 2*p - y; // sub
+            
+            uint64_t r_div_p = r_quotient;
+            uint64_t tmp3 = (tmp2 * (__uint128_t)r_div_p) >> 64;
+            uint64_t r_tmp2 =  r_operand * tmp2;
+            uint64_t tmp4_1 = tmp3 * p;
+            uint64_t tmp4 = r_tmp2 - tmp4_1;
+            
+            element[offset + j] = tmp1;
+            element[offset + gap + j] = tmp4;
+        }
+        offset += gap << 1;
+        }
+        gap <<= 1;  
+    }
+    
+    for (size_t j = 0; j < N; j++)
+    {
+        uint64_t x = element[j];
+        uint64_t tmp1 = (x * (__uint128_t)scalar_div_p) >> 64;
+        uint64_t tmp2 = scalar * x;
+        uint64_t tmp3 = tmp1 * p;
+        uint64_t tmp4 = tmp2 - tmp3; // scalar * x - ((x * (__uint128_t)scalar_div_p) >> 64) *p
+
+        element[j] = tmp4;
+    }
+
+    for(uint32_t i=0; i<N; i++){
+        if(element[i] >= p) element[i] -= p;
+    }
+}
+
 template <typename VecType>
 void NumberTheoreticTransformNat<VecType>::InverseTransformFromBitReverse(
     const VecType& element, const VecType& rootOfUnityInverseTable, const VecType& preconRootOfUnityInverseTable,
@@ -742,6 +808,35 @@ void ChineseRemainderTransformFTTNat<VecType>::InverseTransformFromBitReverseInP
 }
 
 template <typename VecType>
+void ChineseRemainderTransformFTTNat<VecType>::InverseTransformFromBitReverseInPlace(const IntType& rootOfUnity,
+                                                                                     const usint CycloOrder,
+                                                                                     uint64_t* element, size_t N, uint64_t modulus) {
+    if (rootOfUnity == IntType(1) || rootOfUnity == IntType(0)) {
+        return;
+    }
+
+    if (!lbcrypto::IsPowerOfTwo(CycloOrder)) {
+        OPENFHE_THROW(lbcrypto::math_error, "CyclotomicOrder is not a power of two");
+    }
+
+    usint CycloOrderHf = (CycloOrder >> 1);
+    if (N != CycloOrderHf) {
+        OPENFHE_THROW(lbcrypto::math_error, "element size must be equal to CyclotomicOrder / 2");
+    }
+
+    auto mapSearch = m_rootOfUnityReverseTableByModulus.find(modulus);
+    if (mapSearch == m_rootOfUnityReverseTableByModulus.end() || mapSearch->second.GetLength() != CycloOrderHf) {
+        PreCompute(rootOfUnity, CycloOrder, modulus);
+    }
+
+    usint msb = lbcrypto::GetMSB(CycloOrderHf - 1);
+    NumberTheoreticTransformNat<VecType>().InverseTransformFromBitReverseInPlace(
+        m_rootOfUnityInverseReverseTableByModulus[modulus], m_rootOfUnityInversePreconReverseTableByModulus[modulus],
+        m_cycloOrderInverseTableByModulus[modulus][msb], m_cycloOrderInversePreconTableByModulus[modulus][msb],
+        element,  N, modulus);
+}
+
+template <typename VecType>
 void ChineseRemainderTransformFTTNat<VecType>::InverseTransformFromBitReverse(const VecType& element,
                                                                               const IntType& rootOfUnity,
                                                                               const usint CycloOrder, VecType* result) {
@@ -797,10 +892,12 @@ void ChineseRemainderTransformFTTNat<VecType>::PreCompute(const IntType& rootOfU
             VecType TableI(CycloOrderHf, modulus);
             IntType rootOfUnityInverse = rootOfUnity.ModInverse(modulus);
             usint iinv;
+            usint modified_iinv; // modify
             for (usint i = 0; i < CycloOrderHf; i++) {
-                iinv         = lbcrypto::ReverseBits(i, msb);
+                iinv          = lbcrypto::ReverseBits(i, msb);
+                modified_iinv = lbcrypto::ReverseBits(i-1, msb) + 1;
                 Table[iinv]  = x;
-                TableI[iinv] = xinv;
+                TableI[modified_iinv] = xinv; // modify
                 x.ModMulEq(rootOfUnity, modulus, mu);
                 xinv.ModMulEq(rootOfUnityInverse, modulus, mu);
             }
