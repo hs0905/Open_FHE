@@ -140,6 +140,7 @@ struct DataTypes<uint128_t> {
 template <typename limb_t>
 class ubint final : public lbcrypto::BigIntegerInterface<ubint<limb_t>> {
 private:
+public:
     // variable that stores the MOST SIGNIFICANT BIT position in the
     usint m_MSB{0};
     // vector storing the native integers. stored little endian

@@ -138,6 +138,7 @@ struct DataTypes<uint128_t> {
 template <typename NativeInt>
 class NativeIntegerT final : public lbcrypto::BigIntegerInterface<NativeIntegerT<NativeInt>> {
 private:
+public:
     NativeInt m_value{0};
 
     // variable to store the maximum value of the integral data type.

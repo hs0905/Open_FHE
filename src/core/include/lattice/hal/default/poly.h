@@ -68,8 +68,9 @@ namespace lbcrypto {
 template <typename VecType>
 class ShadowType {
     public:
-        mutable std::shared_ptr<VecType> m_values{nullptr};   
-        mutable usint shadow_sync_state{SHADOW_NOTEXIST};    
+        mutable std::shared_ptr<std::vector<uint64_t>> m_values{nullptr};   
+        mutable usint shadow_sync_state{SHADOW_NOTEXIST};  
+        uint64_t* get_ptr() {return &(*m_values)[0];}  
 }; 
 
 template <typename VecType>
@@ -90,37 +91,48 @@ public:
     constexpr PolyImpl() = default;
 
     void copy_from_shadow() const {
-        if(m_values != nullptr) {
-            if(m_values_shadow.shadow_sync_state == SHADOW_IS_AHEAD) {
-                *m_values = *m_values_shadow.m_values;
-                m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
-            }
+        if(m_values == nullptr) {
+            usint r{m_params->GetRingDimension()};
+            m_values = std::make_unique<VecType>(r, m_params->GetModulus());
+        }
+
+        if(m_values_shadow.shadow_sync_state == SHADOW_IS_AHEAD) {
+            // *m_values = *m_values_shadow.m_values;                
+            ::memcpy((char*)&m_values->m_data[0],m_values_shadow.get_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
+            m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
         }
     }
+
     void copy_to_shadow() const {
-        if(m_values != nullptr) {
-            if(m_values_shadow.shadow_sync_state == SHADOW_NOTEXIST) {
-                create_shadow();   
-            }            
-            if(m_values_shadow.shadow_sync_state == SHADOW_IS_BEHIND) {
-                *m_values_shadow.m_values = * m_values;    
-                m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
-            }
+        if(m_values == nullptr) {
+            OPENFHE_THROW(not_available_error, "m_values not created");
+        }
+
+        if(m_values_shadow.shadow_sync_state == SHADOW_NOTEXIST) {
+            create_shadow();   
+        }            
+        if(m_values_shadow.shadow_sync_state == SHADOW_IS_BEHIND) {
+            // *m_values_shadow.m_values = * m_values;    
+            ::memcpy(m_values_shadow.get_ptr(),(char*)&m_values->m_data[0],sizeof(uint64_t)*m_params->GetRingDimension());
+            m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
         }
     }
+
     void copy_from_other_shadow(ShadowType<VecType>& other) {
         if(!m_values_shadow.m_values) {
             OPENFHE_THROW(not_available_error, "shadow not created");
         }
         else {
-            *m_values_shadow.m_values = *other.m_values;
+            // *m_values_shadow.m_values = *other.m_values;
+            ::memcpy(m_values_shadow.get_ptr(),other.get_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
             m_values_shadow.shadow_sync_state = other.shadow_sync_state;
         }
     }
     void create_shadow() const {
         // VecType tmp(m_params->GetRingDimension());
         // m_values_shadow->m_values = tmp;
-        m_values_shadow.m_values = std::make_shared<VecType>(m_params->GetRingDimension());
+        // m_values_shadow.m_values = std::make_shared<VecType>(m_params->GetRingDimension());
+        m_values_shadow.m_values = std::make_shared<std::vector<uint64_t>>(m_params->GetRingDimension());
         m_values_shadow.shadow_sync_state = SHADOW_IS_BEHIND;
     }
     void discard_shadow() {        
@@ -128,13 +140,24 @@ public:
         m_values_shadow.shadow_sync_state = SHADOW_NOTEXIST;
     }
     void indicate_modified_shadow() {        
+        if( m_values_shadow.shadow_sync_state != SHADOW_NOTEXIST)
+           if( m_values_shadow.m_values == nullptr ) 
+               OPENFHE_THROW(not_available_error, "m_values_shadow.m_values is null");
+
         m_values_shadow.shadow_sync_state = SHADOW_IS_AHEAD;
         // if(m_values!= nullptr && m_values_shadow != nullptr)
         //     *m_values = * m_values_shadow;    
     }
     void indicate_modified_orig() {        
-        if( m_values_shadow.shadow_sync_state != SHADOW_NOTEXIST)
-            m_values_shadow.shadow_sync_state = SHADOW_IS_BEHIND;
+        if( m_values_shadow.shadow_sync_state != SHADOW_NOTEXIST) {
+            if( m_values_shadow.m_values == nullptr ) 
+               OPENFHE_THROW(not_available_error, "m_values_shadow.m_values is null");
+            m_values_shadow.shadow_sync_state = SHADOW_IS_BEHIND;  
+        }      
+        else {
+            if( m_values_shadow.m_values != nullptr ) 
+               OPENFHE_THROW(not_available_error, "m_values_shadow.m_values is not null");
+        }
         // if(m_values!= nullptr && m_values_shadow != nullptr)
         //     *m_values_shadow = * m_values;    
     }
@@ -270,27 +293,28 @@ public:
     }
 
     inline const VecType& GetValues() const final {
+        this->copy_from_shadow();
         if (m_values == nullptr)
             OPENFHE_THROW(not_available_error, "No values in PolyImpl");
-        this->copy_from_shadow();
         return *m_values;
     }
 
     inline bool IsEmpty() const final {
+        this->copy_from_shadow();
         return m_values == nullptr;
     }
 
     inline Integer& at(usint i) final {
+        this->copy_from_shadow();
         if (m_values == nullptr)
             OPENFHE_THROW(not_available_error, "No values in PolyImpl");
-        this->copy_from_shadow();
         return m_values->at(i);
     }
 
     inline const Integer& at(usint i) const final {
+        this->copy_from_shadow();
         if (m_values == nullptr)
             OPENFHE_THROW(not_available_error, "No values in PolyImpl");
-        this->copy_from_shadow();
         return m_values->at(i);
     }
 
@@ -313,19 +337,19 @@ public:
             OPENFHE_THROW(not_implemented_error, "Format missmatch");
         auto tmp(*this);
         // tmp.m_values->ModAddNoCheckEq(*rhs.m_values);
-        tmp.copy_to_shadow();
-        rhs.copy_to_shadow();
-        tmp.m_values_shadow.m_values->ModAddNoCheckEq(*rhs.m_values_shadow.m_values);
-        tmp.indicate_modified_shadow();
+        tmp.copy_from_shadow();
+        rhs.copy_from_shadow();
+        tmp.m_values->ModAddNoCheckEq(*rhs.m_values);
+        tmp.indicate_modified_orig();
         return tmp;
     }
     PolyImpl PlusNoCheck(const PolyImpl& rhs) const {
         auto tmp(*this);
         // tmp.m_values->ModAddNoCheckEq(*rhs.m_values);
-        tmp.copy_to_shadow();
-        rhs.copy_to_shadow();
-        tmp.m_values_shadow.m_values->ModAddNoCheckEq(*rhs.m_values_shadow.m_values);
-        tmp.indicate_modified_shadow();
+        tmp.copy_from_shadow();
+        rhs.copy_from_shadow();
+        tmp.m_values->ModAddNoCheckEq(*rhs.m_values);
+        tmp.indicate_modified_orig();
         return tmp;
     }
     PolyImpl& operator+=(const PolyImpl& element) override;
@@ -341,9 +365,9 @@ public:
     PolyImpl Minus(const Integer& element) const override;
     PolyImpl& operator-=(const Integer& element) override {
         // m_values->ModSubEq(element);
-        this->copy_to_shadow();
-        m_values_shadow.m_values->ModSubEq(element);
-        this->indicate_modified_shadow();
+        this->copy_from_shadow();
+        m_values->ModSubEq(element);
+        this->indicate_modified_orig();
         return *this;
     }
 
@@ -356,19 +380,19 @@ public:
             OPENFHE_THROW(not_implemented_error, "operator* for PolyImpl supported only in Format::EVALUATION");
         auto tmp(*this);
         // tmp.m_values->ModMulNoCheckEq(*rhs.m_values);
-        tmp.copy_to_shadow();
-        rhs.copy_to_shadow();
-        tmp.m_values_shadow.m_values->ModMulNoCheckEq(*rhs.m_values_shadow.m_values);
-        tmp.indicate_modified_shadow();
+        tmp.copy_from_shadow();
+        rhs.copy_from_shadow();
+        tmp.m_values->ModMulNoCheckEq(*rhs.m_values);
+        tmp.indicate_modified_orig();
         return tmp;
     }
     PolyImpl TimesNoCheck(const PolyImpl& rhs) const {
         auto tmp(*this);
         // tmp.m_values->ModMulNoCheckEq(*rhs.m_values);
-        tmp.copy_to_shadow();
-        rhs.copy_to_shadow();
-        tmp.m_values_shadow.m_values->ModMulNoCheckEq(*rhs.m_values_shadow.m_values);
-        tmp.indicate_modified_shadow();
+        tmp.copy_from_shadow();
+        rhs.copy_from_shadow();
+        tmp.m_values->ModMulNoCheckEq(*rhs.m_values);
+        tmp.indicate_modified_orig();
         return tmp;
     }
     PolyImpl& operator*=(const PolyImpl& rhs) override {
@@ -378,12 +402,12 @@ public:
             OPENFHE_THROW(math_error, "Modulus missmatch");
         if (m_format != Format::EVALUATION || rhs.m_format != Format::EVALUATION)
             OPENFHE_THROW(not_implemented_error, "operator* for PolyImpl supported only in Format::EVALUATION");
+        this->copy_from_shadow();
         if (m_values) {
             // m_values->ModMulNoCheckEq(*rhs.m_values);
-            this->copy_to_shadow();
-            rhs.copy_to_shadow();
-            m_values_shadow.m_values->ModMulNoCheckEq(*rhs.m_values_shadow.m_values);
-            this->indicate_modified_shadow();
+            rhs.copy_from_shadow();
+            m_values->ModMulNoCheckEq(*rhs.m_values);
+            this->indicate_modified_orig();
             return *this;
         }
         m_values = std::make_unique<VecType>(m_params->GetRingDimension(), m_params->GetModulus());
@@ -394,9 +418,9 @@ public:
     PolyImpl Times(const Integer& element) const override;
     PolyImpl& operator*=(const Integer& element) override {
         // m_values->ModMulEq(element);
-        this->copy_to_shadow();
-        m_values_shadow.m_values->ModMulEq(element);
-        this->indicate_modified_shadow();
+        this->copy_from_shadow();
+        m_values->ModMulEq(element);
+        this->indicate_modified_orig();
         return *this;
     }
 

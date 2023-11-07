@@ -50,6 +50,8 @@
 #include <utility>
 #include <vector>
 
+extern void divide_uint192_inplace(uint64_t *numerator, uint64_t denominator, uint64_t *quotient);
+
 namespace lbcrypto {
 
 template <typename VecType>
@@ -57,6 +59,7 @@ PolyImpl<VecType>::PolyImpl(const DggType& dgg, const std::shared_ptr<PolyImpl::
     : m_format{Format::COEFFICIENT},
       m_params{params},
       m_values{std::make_unique<VecType>(dgg.GenerateVector(params->GetRingDimension(), params->GetModulus()))} {
+    OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
     PolyImpl<VecType>::SetFormat(format);
 }
 
@@ -65,6 +68,7 @@ PolyImpl<VecType>::PolyImpl(DugType& dug, const std::shared_ptr<PolyImpl::Params
     : m_format{Format::COEFFICIENT},
       m_params{params},
       m_values{std::make_unique<VecType>(dug.GenerateVector(params->GetRingDimension(), params->GetModulus()))} {
+    OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
     PolyImpl<VecType>::SetFormat(format);
 }
 
@@ -73,6 +77,7 @@ PolyImpl<VecType>::PolyImpl(const BugType& bug, const std::shared_ptr<PolyImpl::
     : m_format{Format::COEFFICIENT},
       m_params{params},
       m_values{std::make_unique<VecType>(bug.GenerateVector(params->GetRingDimension(), params->GetModulus()))} {
+    OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
     PolyImpl<VecType>::SetFormat(format);
 }
 
@@ -82,6 +87,7 @@ PolyImpl<VecType>::PolyImpl(const TugType& tug, const std::shared_ptr<PolyImpl::
     : m_format{Format::COEFFICIENT},
       m_params{params},
       m_values{std::make_unique<VecType>(tug.GenerateVector(params->GetRingDimension(), params->GetModulus(), h))} {
+    OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
     PolyImpl<VecType>::SetFormat(format);
 }
 
@@ -91,29 +97,16 @@ PolyImpl<VecType>& PolyImpl<VecType>::operator=(const PolyImpl& rhs) noexcept {
     m_params = rhs.m_params;
     if (!rhs.m_values) {
         m_values = nullptr;
+        m_values_shadow = rhs.m_values_shadow;
         return *this;
     }
     if (m_values) {
         *m_values = *rhs.m_values;
-        if (rhs.m_values_shadow.shadow_sync_state == SHADOW_SYNCHED || rhs.m_values_shadow.shadow_sync_state == SHADOW_IS_AHEAD) {
-            if(m_values_shadow.shadow_sync_state == SHADOW_NOTEXIST) this->create_shadow();
-            this->copy_from_other_shadow(rhs.m_values_shadow);
-            m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
-        }
-        else {
-            m_values_shadow.shadow_sync_state = rhs.m_values_shadow.shadow_sync_state;
-        }
+        m_values_shadow = rhs.m_values_shadow;
         return *this;
     }
     m_values = std::make_unique<VecType>(*rhs.m_values);
-    if (rhs.m_values_shadow.shadow_sync_state == SHADOW_SYNCHED || rhs.m_values_shadow.shadow_sync_state == SHADOW_IS_AHEAD) {
-        if(m_values_shadow.shadow_sync_state == SHADOW_NOTEXIST) this->create_shadow();
-        this->copy_from_other_shadow(rhs.m_values_shadow);
-        m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
-    }
-    else {
-        m_values_shadow.shadow_sync_state = rhs.m_values_shadow.shadow_sync_state;
-    }
+    m_values_shadow = rhs.m_values_shadow;
     return *this;
 }
 
@@ -242,7 +235,8 @@ void PolyImpl<VecType>::SetValuesShadow(const VecType& values, Format format) {
     m_values = std::make_unique<VecType>(values);
     if(m_values_shadow.shadow_sync_state == SHADOW_NOTEXIST) this->create_shadow();
     //need to modify..
-    *m_values_shadow.m_values = values;
+    // *m_values_shadow.m_values = values;
+    ::memcpy(m_values_shadow.get_ptr(),&(values.m_data[0]),sizeof(uint64_t)*m_params->GetRingDimension());                
     m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
 }
 
@@ -256,38 +250,109 @@ void PolyImpl<VecType>::SetValuesShadow(VecType&& values, Format format) {
     m_values = std::make_unique<VecType>(values);
     if(m_values_shadow.shadow_sync_state == SHADOW_NOTEXIST) this->create_shadow();
     //need to modify..
-    *m_values_shadow.m_values = std::move(values);
+    // *m_values_shadow.m_values = std::move(values);
+    ::memcpy(m_values_shadow.get_ptr(),&(values.m_data[0]),sizeof(uint64_t)*m_params->GetRingDimension());                
     m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
 }
 
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Plus(const typename VecType::Integer& element) const {
     PolyImpl<VecType> tmp(m_params, m_format);
-    this->copy_to_shadow();
+    this->copy_from_shadow();
     if (m_format == Format::COEFFICIENT)
-        // tmp.SetValues((*m_values).ModAddAtIndex(0, element), m_format);
-        tmp.SetValuesShadow((*m_values_shadow.m_values).ModAddAtIndex(0, element), m_format);
+        tmp.SetValues((*m_values).ModAddAtIndex(0, element), m_format);
+        // tmp.SetValuesShadow((*m_values_shadow.m_values).ModAddAtIndex(0, element), m_format);
     else
-        // tmp.SetValues((*m_values).ModAdd(element), m_format);
-        tmp.SetValuesShadow((*m_values_shadow.m_values).ModAdd(element), m_format);
+        tmp.SetValues((*m_values).ModAdd(element), m_format);
+        // tmp.SetValuesShadow((*m_values_shadow.m_values).ModAdd(element), m_format);
     return tmp;
 }
 
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Minus(const typename VecType::Integer& element) const {
     PolyImpl<VecType> tmp(m_params, m_format);
-    this->copy_to_shadow();
-    // tmp.SetValues((*m_values).ModSub(element), m_format);
-    tmp.SetValuesShadow((*m_values_shadow.m_values).ModSub(element), m_format);
+    this->copy_from_shadow();
+    tmp.SetValues((*m_values).ModSub(element), m_format);
+    // tmp.SetValuesShadow((*m_values_shadow.m_values).ModSub(element), m_format);
     return tmp;
 }
+
 
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Times(const typename VecType::Integer& element) const {
     PolyImpl<VecType> tmp(m_params, m_format);
+    this->copy_from_shadow();
+    tmp.SetValues((*m_values).ModMul(element), m_format);
+    return tmp;
+}
+
+//c++ explicit template specialization!
+template <>
+PolyImpl<NativeVector> PolyImpl<NativeVector>::Times(const typename NativeVector::Integer& element) const {
+    PolyImpl<NativeVector> tmp(m_params, m_format);    
+    tmp.create_shadow();
+
     this->copy_to_shadow();
+    {
+        uint64_t* res       = tmp.m_values_shadow.get_ptr();
+        const uint64_t* op1 = m_values_shadow.get_ptr();
+        uint64_t numerator[3]{ 0, 0, 1 };
+        uint64_t quotient[3]{ 0, 0, 0 };
+        uint64_t modulus = m_values->m_modulus.m_value;
+        divide_uint192_inplace(numerator, modulus, quotient);
+        uint64_t pq0 = quotient[0];
+        uint64_t pq1 = quotient[1];
+        uint64_t scalar = element.m_value >= modulus ? element.m_value % modulus : element.m_value;
+        for(size_t i=0; i<m_values_shadow.m_values->size(); i++){
+            const uint64_t x = op1[i];
+            unsigned long long z[2];
+
+            uint128_t product = static_cast<unsigned uint128_t>(x) * scalar;
+            z[0] = static_cast<unsigned long long>(product);                        
+            z[1] = static_cast<unsigned long long>(product >> 64);
+
+            unsigned long long tmp1, tmp2[2], tmp3, carry;
+
+            // Multiply input and const_ratio
+            // Round 1
+            // multiply_uint64_hw64(z[0], pq0, &carry);
+            carry = static_cast<unsigned long long>(                                        
+            ((static_cast<uint128_t>(z[0])                              
+            * static_cast<uint128_t>(pq0)) >> 64));                    
+
+            // multiply_uint64(z[0], pq1, tmp2);
+            product = static_cast<uint128_t>(z[0]) * pq1;
+            tmp2[0] = static_cast<unsigned long long>(product);                        
+            tmp2[1] = static_cast<unsigned long long>(product >> 64);
+
+            // tmp3 = tmp2[1] + add_uint64(tmp2[0], carry, &tmp1);
+            tmp1 = tmp2[0] + carry;
+            tmp3 = tmp2[1] + static_cast<unsigned char>(tmp1 < tmp2[0]);
+
+            // Round 2
+            // multiply_uint64(z[1], pq0, tmp2);
+            product = static_cast<uint128_t>(z[1]) * pq0;
+            tmp2[0] = static_cast<unsigned long long>(product);                        
+            tmp2[1] = static_cast<unsigned long long>(product >> 64);
+
+            // carry = tmp2[1] + add_uint64(tmp1, tmp2[0], &tmp1);
+            tmp1 = tmp1 + tmp2[0];
+            carry = tmp2[1] + static_cast<unsigned char>(tmp1 < tmp2[0]);
+
+            // This is all we care about
+            tmp1 = z[1] * pq1 + tmp3 + carry;
+
+            // Barrett subtraction
+            tmp3 = z[0] - tmp1 * modulus;
+
+            // One more subtraction is enough
+            res[i] = tmp3 >= modulus ? tmp3 - modulus : tmp3;
+        }
+    }
+    tmp.indicate_modified_shadow();
+    
     // tmp.SetValues((*m_values).ModMul(element), m_format);
-    tmp.SetValuesShadow((*m_values_shadow.m_values).ModMul(element), m_format);
+    // tmp.SetValuesShadow((*m_values_shadow.m_values).ModMul(element), m_format);
     return tmp;
 }
 
@@ -295,20 +360,20 @@ template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Times(NativeInteger::SignedNativeInt element) const {
     PolyImpl<VecType> tmp(m_params, m_format);
     Integer q{m_params->GetModulus()};
-    this->copy_to_shadow(); 
+    this->copy_from_shadow();
     if (element < 0) {
         Integer elementReduced{NativeInteger::Integer(-element)};
         if (elementReduced > q)
             elementReduced.ModEq(q);
-        // tmp.SetValues((*m_values).ModMul(q - elementReduced), m_format);
-        tmp.SetValuesShadow((*m_values_shadow.m_values).ModMul(q - elementReduced), m_format);
+        tmp.SetValues((*m_values).ModMul(q - elementReduced), m_format);
+        // tmp.SetValuesShadow((*m_values_shadow.m_values).ModMul(q - elementReduced), m_format);
     }
     else {
         Integer elementReduced{NativeInteger::Integer(element)};
         if (elementReduced > q)
             elementReduced.ModEq(q);
-        // tmp.SetValues((*m_values).ModMul(elementReduced), m_format);
-        tmp.SetValuesShadow((*m_values_shadow.m_values).ModMul(elementReduced), m_format);
+        tmp.SetValues((*m_values).ModMul(elementReduced), m_format);
+        // tmp.SetValuesShadow((*m_values_shadow.m_values).ModMul(elementReduced), m_format);
     }
     return tmp;
 }
@@ -316,10 +381,10 @@ PolyImpl<VecType> PolyImpl<VecType>::Times(NativeInteger::SignedNativeInt elemen
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Minus(const PolyImpl& rhs) const {
     PolyImpl<VecType> tmp(m_params, m_format);
-    this->copy_to_shadow(); 
-    rhs.copy_to_shadow(); 
-    // tmp.SetValues((*m_values).ModSub(*rhs.m_values), m_format);
-    tmp.SetValuesShadow((*m_values_shadow.m_values).ModSub(*rhs.m_values_shadow.m_values), m_format);
+    this->copy_from_shadow(); 
+    rhs.copy_from_shadow(); 
+    tmp.SetValues((*m_values).ModSub(*rhs.m_values), m_format);
+    // tmp.SetValuesShadow((*m_values_shadow.m_values).ModSub(*rhs.m_values_shadow.m_values), m_format);
     return tmp;
 }
 
@@ -351,25 +416,25 @@ PolyImpl<VecType> PolyImpl<VecType>::Negate() const {
 
 template <typename VecType>
 PolyImpl<VecType>& PolyImpl<VecType>::operator+=(const PolyImpl& element) {
+    this->copy_from_shadow();
+    element.copy_from_shadow();
     if (!m_values)
         m_values = std::make_unique<VecType>(m_params->GetRingDimension(), m_params->GetModulus());
     // m_values->ModAddEq(*element.m_values);
-    this->copy_to_shadow();
-    element.copy_to_shadow();
-    m_values_shadow.m_values->ModAddEq(*element.m_values_shadow.m_values);
-    this->indicate_modified_shadow();
+    m_values->ModAddEq(*element.m_values);
+    this->indicate_modified_orig();
     return *this;
 }
 
 template <typename VecType>
 PolyImpl<VecType>& PolyImpl<VecType>::operator-=(const PolyImpl& element) {
+    this->copy_from_shadow();
+    element.copy_from_shadow();
     if (!m_values)
         m_values = std::make_unique<VecType>(m_params->GetRingDimension(), m_params->GetModulus());
     // m_values->ModSubEq(*element.m_values);
-    this->copy_to_shadow();
-    element.copy_to_shadow();
-    m_values_shadow.m_values->ModSubEq(*element.m_values_shadow.m_values);
-    this->indicate_modified_shadow();
+    m_values->ModSubEq(*element.m_values);
+    this->indicate_modified_orig();
     return *this;
 }
 
@@ -450,11 +515,11 @@ PolyImpl<VecType> PolyImpl<VecType>::AutomorphismTransform(uint32_t k, const std
     uint32_t n = m_params->GetRingDimension();
     // for (uint32_t j = 0; j < n; ++j)
     //     (*tmp.m_values)[j] = (*m_values)[precomp[j]];
-    this->copy_to_shadow();
-    tmp.copy_to_shadow();
+    this->copy_from_shadow();
+    tmp.copy_from_shadow();
     for (uint32_t j = 0; j < n; ++j)
-        (*tmp.m_values_shadow.m_values)[j] = (*m_values_shadow.m_values)[precomp[j]];
-    tmp.indicate_modified_shadow();
+        (*tmp.m_values)[j] = (*m_values)[precomp[j]];
+    tmp.indicate_modified_orig();
     return tmp;
 }
 
@@ -485,11 +550,11 @@ PolyImpl<VecType> PolyImpl<VecType>::Mod(const Integer& modulus) const {
 template <typename VecType>
 void PolyImpl<VecType>::SwitchModulus(const Integer& modulus, const Integer& rootOfUnity, const Integer& modulusArb,
                                       const Integer& rootOfUnityArb) {
+    this->copy_from_shadow();
     if (m_values != nullptr) {
         // m_values->SwitchModulus(modulus);
-        this->copy_to_shadow();
-        m_values_shadow.m_values->SwitchModulus(modulus);
-        this->indicate_modified_shadow();
+        m_values->SwitchModulus(modulus);
+        this->indicate_modified_orig();
         auto c{m_params->GetCyclotomicOrder()};
         m_params = std::make_shared<PolyImpl::Params>(c, modulus, rootOfUnity, modulusArb, rootOfUnityArb);
     }
@@ -506,22 +571,21 @@ void PolyImpl<VecType>::SwitchFormat() {
         return;
     }
 
+    this->copy_from_shadow();
     if (!m_values)
         OPENFHE_THROW(not_available_error, "Poly switch format to empty values");
 
     if (m_format != Format::COEFFICIENT) {
         m_format = Format::COEFFICIENT;
         // ChineseRemainderTransformFTT<VecType>().InverseTransformFromBitReverseInPlace(ru, co, &(*m_values));
-        this->copy_to_shadow();
-        ChineseRemainderTransformFTT<VecType>().InverseTransformFromBitReverseInPlace(ru, co, &(*m_values_shadow.m_values));
-        this->indicate_modified_shadow();
+        ChineseRemainderTransformFTT<VecType>().InverseTransformFromBitReverseInPlace(ru, co, &(*m_values));
+        this->indicate_modified_orig();
         return;
     }
     m_format = Format::EVALUATION;
     // ChineseRemainderTransformFTT<VecType>().ForwardTransformToBitReverseInPlace(ru, co, &(*m_values));
-    this->copy_to_shadow();
-    ChineseRemainderTransformFTT<VecType>().ForwardTransformToBitReverseInPlace(ru, co, &(*m_values_shadow.m_values));
-    this->indicate_modified_shadow();
+    ChineseRemainderTransformFTT<VecType>().ForwardTransformToBitReverseInPlace(ru, co, &(*m_values));
+    this->indicate_modified_orig();
 }
 
 template <typename VecType>
@@ -663,6 +727,7 @@ std::vector<PolyImpl<VecType>> PolyImpl<VecType>::PowersOfBase(usint baseBits) c
 template <typename VecType>
 typename PolyImpl<VecType>::PolyNative PolyImpl<VecType>::DecryptionCRTInterpolate(PlaintextModulus ptm) const {
     const PolyImpl<VecType> smaller(PolyImpl<VecType>::Mod(ptm));
+    smaller.copy_from_shadow();
     usint vlen{m_params->GetRingDimension()};
     auto c{m_params->GetCyclotomicOrder()};
     auto params{std::make_shared<ILNativeParams>(c, NativeInteger(ptm), 1)};
