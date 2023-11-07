@@ -160,6 +160,9 @@ public:
    */
     void ForwardTransformToBitReverseInPlace(const VecType& rootOfUnityTable, const VecType& preconRootOfUnityTable,
                                              VecType* element);
+                                             
+    void ForwardTransformToBitReverseInPlace(const VecType& rootOfUnityTable, const VecType& preconRootOfUnityTable,
+                                              uint64_t* element, size_t N, uint64_t modulus);
 
     /**
    * Copies \p element into \p result and calls InverseTransformFromBitReverseInPlace()
@@ -282,6 +285,8 @@ public:
    * @see NumberTheoreticTransform::ForwardTransformToBitReverseInPlace()
    */
     void ForwardTransformToBitReverseInPlace(const IntType& rootOfUnity, const usint CycloOrder, VecType* element);
+    
+    void ForwardTransformToBitReverseInPlace(const IntType& rootOfUnity, const usint CycloOrder, uint64_t* element, size_t N, uint64_t modulus);
 
     /**
    * Copies \p element into \p result and calls NumberTheoreticTransform::InverseTransformFromBitReverseInPlace()

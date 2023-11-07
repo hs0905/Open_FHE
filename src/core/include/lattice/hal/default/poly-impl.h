@@ -769,6 +769,35 @@ void PolyImpl<VecType>::SwitchFormat() {
     this->indicate_modified_orig();
 }
 
+template <>
+void PolyImpl<NativeVector>::SwitchFormat() {
+    const auto& co{m_params->GetCyclotomicOrder()};
+    const auto& rd{m_params->GetRingDimension()};
+    const auto& ru{m_params->GetRootOfUnity()};
+
+    if (rd != (co >> 1)) {
+        PolyImpl<NativeVector>::ArbitrarySwitchFormat();
+        return;
+    }
+
+    if (m_format != Format::COEFFICIENT) {        
+        m_format = Format::COEFFICIENT;
+        this->copy_from_shadow();
+        if (!m_values)
+            OPENFHE_THROW(not_available_error, "Poly switch format to empty values");
+
+        ChineseRemainderTransformFTT<NativeVector>().InverseTransformFromBitReverseInPlace(ru, co, &(*m_values));
+        this->indicate_modified_orig();
+        return;
+    }
+
+    m_format = Format::EVALUATION;
+
+    this->copy_to_shadow();
+    ChineseRemainderTransformFTT<NativeVector>().ForwardTransformToBitReverseInPlace(ru, co, m_values_shadow.get_ptr(),this->GetLength(),m_params->GetModulus().m_value);
+    this->indicate_modified_shadow();
+}
+
 template <typename VecType>
 void PolyImpl<VecType>::ArbitrarySwitchFormat() {
     OPENFHE_THROW(not_implemented_error, "hcho: not tested here");

@@ -353,6 +353,59 @@ void NumberTheoreticTransformNat<VecType>::ForwardTransformToBitReverseInPlace(c
     }
 }
 
+
+
+template <typename VecType>
+void NumberTheoreticTransformNat<VecType>::ForwardTransformToBitReverseInPlace(const VecType& rootOfUnityTable,
+                                                                               const VecType& preconRootOfUnityTable,
+                                                                               uint64_t* element, size_t N, uint64_t modulus) {
+    uint64_t p = modulus;
+
+    uint64_t x;
+    uint64_t y;
+
+    size_t m = 1;
+    size_t gap = N >> 1;
+
+    size_t root_idx = 0;
+    
+    for (m = 1; m < N; m <<= 1) {
+        size_t offset = 0;
+
+        for (size_t i = 0; i < m; i++)  {
+            root_idx++;
+            uint64_t r_operand = rootOfUnityTable[root_idx].ConvertToInt();
+            uint64_t r_quotient = preconRootOfUnityTable[root_idx].ConvertToInt();
+            
+            for (size_t j = 0; j < gap; j++)
+            {
+                x = element[offset + j];
+                if(x >= 2*p) x-= 2*p;
+
+                y = element[offset + gap+ j];
+
+                uint64_t r_div_p = r_quotient;
+                uint64_t tmp1 = (y * (__uint128_t)r_div_p) >> 64;
+                uint64_t tmp2 = r_operand * y - tmp1 * p;
+                uint64_t tmp3 = x + tmp2;
+                uint64_t tmp4 = x +2*p - tmp2;
+
+                element[offset + j] = tmp3;
+                element[offset + gap+j] = tmp4;
+            }
+            offset += gap << 1;
+        }
+        gap >>= 1;
+    }
+
+    for(uint32_t i=0; i<N; i++){
+        if(element[i] >= 2*p) element[i] -= 2*p;
+        if(element[i] >= p) element[i] -= p;
+    }
+}
+
+
+
 template <typename VecType>
 void NumberTheoreticTransformNat<VecType>::ForwardTransformToBitReverse(const VecType& element,
                                                                         const VecType& rootOfUnityTable,
@@ -597,6 +650,32 @@ void ChineseRemainderTransformFTTNat<VecType>::ForwardTransformToBitReverseInPla
 
     NumberTheoreticTransformNat<VecType>().ForwardTransformToBitReverseInPlace(
         m_rootOfUnityReverseTableByModulus[modulus], m_rootOfUnityPreconReverseTableByModulus[modulus], element);
+}
+
+template <typename VecType>
+void ChineseRemainderTransformFTTNat<VecType>::ForwardTransformToBitReverseInPlace(const IntType& rootOfUnity,
+                                                                                   const usint CycloOrder,
+                                                                                   uint64_t* element, size_t N, uint64_t modulus) {
+    if (rootOfUnity == IntType(1) || rootOfUnity == IntType(0)) {
+        return;
+    }
+
+    if (!lbcrypto::IsPowerOfTwo(CycloOrder)) {
+        OPENFHE_THROW(lbcrypto::math_error, "CyclotomicOrder is not a power of two");
+    }
+
+    usint CycloOrderHf = (CycloOrder >> 1);
+    if (N != CycloOrderHf) {
+        OPENFHE_THROW(lbcrypto::math_error, "element size must be equal to CyclotomicOrder / 2");
+    }
+
+    auto mapSearch = m_rootOfUnityReverseTableByModulus.find(modulus);
+    if (mapSearch == m_rootOfUnityReverseTableByModulus.end() || mapSearch->second.GetLength() != CycloOrderHf) {
+        PreCompute(rootOfUnity, CycloOrder, modulus);
+    }
+
+    NumberTheoreticTransformNat<NativeVector>().ForwardTransformToBitReverseInPlace(
+        m_rootOfUnityReverseTableByModulus[modulus], m_rootOfUnityPreconReverseTableByModulus[modulus], element, N, modulus);
 }
 
 template <typename VecType>
