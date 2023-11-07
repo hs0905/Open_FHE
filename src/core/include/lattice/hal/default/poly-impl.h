@@ -683,6 +683,27 @@ PolyImpl<VecType> PolyImpl<VecType>::AutomorphismTransform(uint32_t k, const std
     return tmp;
 }
 
+
+template <>
+PolyImpl<NativeVector> PolyImpl<NativeVector>::AutomorphismTransform(uint32_t k, const std::vector<uint32_t>& precomp) const {
+    if ((m_format != Format::EVALUATION) || (m_params->GetRingDimension() != (m_params->GetCyclotomicOrder() >> 1)))
+        OPENFHE_THROW(not_implemented_error, "Automorphism Poly Format not EVALUATION or not power-of-two");
+    if (k % 2 == 0)
+        OPENFHE_THROW(math_error, "Automorphism index not odd\n");
+    PolyImpl<NativeVector> tmp(m_params, m_format, true);
+    uint32_t n = m_params->GetRingDimension();
+    
+    this->copy_to_shadow();
+    tmp.copy_to_shadow();
+    
+    for (uint32_t j = 0; j < n; ++j)
+        (*tmp.m_values_shadow.m_values)[j] = (*m_values_shadow.m_values)[precomp[j]];
+
+    tmp.indicate_modified_shadow();
+    return tmp;
+}
+
+
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::MultiplicativeInverse() const {
     OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
