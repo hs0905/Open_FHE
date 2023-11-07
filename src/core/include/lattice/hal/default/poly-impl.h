@@ -559,9 +559,30 @@ PolyImpl<VecType>& PolyImpl<VecType>::operator+=(const PolyImpl& element) {
     element.copy_from_shadow();
     if (!m_values)
         m_values = std::make_unique<VecType>(m_params->GetRingDimension(), m_params->GetModulus());
-    // m_values->ModAddEq(*element.m_values);
     m_values->ModAddEq(*element.m_values);
     this->indicate_modified_orig();
+    return *this;
+}
+
+template <>
+PolyImpl<NativeVector>& PolyImpl<NativeVector>::operator+=(const PolyImpl& element) {
+    this->copy_to_shadow();
+    element.copy_to_shadow();
+
+    uint64_t* op1       = m_values_shadow.get_ptr();
+    const uint64_t* op2 = element.m_values_shadow.get_ptr();
+    
+    uint64_t modulus = m_params->GetModulus().m_value;
+
+    for(size_t i=0; i<m_values_shadow.m_values->size(); i++){
+        uint64_t sum = op1[i] + op2[i];
+        op1[i] = sum >= modulus ? sum - modulus : sum;
+    }
+
+    // m_values->ModAddEq(*element.m_values);
+    
+    this->indicate_modified_shadow();
+
     return *this;
 }
 
