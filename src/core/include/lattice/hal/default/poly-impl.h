@@ -746,6 +746,46 @@ void PolyImpl<VecType>::SwitchModulus(const Integer& modulus, const Integer& roo
     }
 }
 
+template <>
+void PolyImpl<NativeVector>::SwitchModulus(const Integer& modulus, const Integer& rootOfUnity, const Integer& modulusArb,
+                                      const Integer& rootOfUnityArb) {
+    this->copy_to_shadow();
+    {        
+        auto size{m_values_shadow.m_values->size()};
+        auto halfQ{m_params->GetModulus().m_value >> 1};
+        auto om{m_params->GetModulus().m_value};
+        if (m_values != nullptr) { 
+            m_values->NativeVectorT::SetModulus(modulus);
+        }
+        auto nm{modulus.m_value};
+
+        uint64_t* data = m_values_shadow.get_ptr();
+
+        if (nm > om) {
+            auto diff{nm - om};
+            for (size_t i = 0; i < size; ++i) {
+                auto& v = data[i];
+                if (v > halfQ)
+                    v = v + diff;
+            }
+        }
+        else {
+            auto diff{nm - (om % nm)};
+            for (size_t i = 0; i < size; ++i) {
+                auto& v = data[i];
+                if (v > halfQ)
+                    v = v + diff;
+                if (v >= nm)
+                    v = v % nm;
+            }
+        }
+
+        this->indicate_modified_shadow();
+        auto c{m_params->GetCyclotomicOrder()};
+        m_params = std::make_shared<PolyImpl::Params>(c, modulus, rootOfUnity, modulusArb, rootOfUnityArb);
+    }
+}
+
 template <typename VecType>
 void PolyImpl<VecType>::SwitchFormat() {
     OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
