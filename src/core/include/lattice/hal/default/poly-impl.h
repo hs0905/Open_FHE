@@ -736,6 +736,7 @@ PolyImpl<VecType> PolyImpl<VecType>::Mod(const Integer& modulus) const {
 template <typename VecType>
 void PolyImpl<VecType>::SwitchModulus(const Integer& modulus, const Integer& rootOfUnity, const Integer& modulusArb,
                                       const Integer& rootOfUnityArb) {
+    OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
     this->copy_from_shadow();
     if (m_values != nullptr) {
         // m_values->SwitchModulus(modulus);
