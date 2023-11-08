@@ -265,6 +265,7 @@ PolyImpl<VecType> PolyImpl<VecType>::Plus(const typename VecType::Integer& eleme
     else
         tmp.SetValues((*m_values).ModAdd(element), m_format);
         // tmp.SetValuesShadow((*m_values_shadow.m_values).ModAdd(element), m_format);
+    inc_compute_not_implemented();
     return tmp;
 }
 
@@ -274,6 +275,7 @@ PolyImpl<VecType> PolyImpl<VecType>::Minus(const typename VecType::Integer& elem
     this->copy_from_shadow();
     tmp.SetValues((*m_values).ModSub(element), m_format);
     // tmp.SetValuesShadow((*m_values_shadow.m_values).ModSub(element), m_format);
+    inc_compute_not_implemented();
     return tmp;
 }
 
@@ -416,7 +418,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Times(const typename NativeVector
     );
     
     tmp.indicate_modified_shadow();
-    
+    inc_compute_implemented();
     // tmp.SetValues((*m_values).ModMul(element), m_format);
     return tmp;
 }
@@ -488,6 +490,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Times(NativeInteger::SignedNative
         
         // tmp.SetValues((*m_values).ModMul(elementReduced), m_format);        
     }
+    inc_compute_implemented();
     return tmp;
 }
 
@@ -514,6 +517,8 @@ PolyImpl<NativeVector>& PolyImpl<NativeVector>::operator*=(const Integer& elemen
     
     this->indicate_modified_shadow();
     
+    inc_compute_implemented();
+
     // m_values->ModMulEq(element);
     // this->indicate_modified_orig();
     return *this;
@@ -527,6 +532,7 @@ PolyImpl<VecType> PolyImpl<VecType>::Minus(const PolyImpl& rhs) const {
     rhs.copy_from_shadow(); 
     tmp.SetValues((*m_values).ModSub(*rhs.m_values), m_format);
     // tmp.SetValuesShadow((*m_values_shadow.m_values).ModSub(*rhs.m_values_shadow.m_values), m_format);
+    inc_compute_not_implemented();
     return tmp;
 }
 
@@ -587,6 +593,8 @@ PolyImpl<NativeVector>& PolyImpl<NativeVector>::operator+=(const PolyImpl& eleme
     
     this->indicate_modified_shadow();
 
+    inc_compute_implemented();
+
     return *this;
 }
 
@@ -599,6 +607,7 @@ PolyImpl<VecType>& PolyImpl<VecType>::operator-=(const PolyImpl& element) {
     // m_values->ModSubEq(*element.m_values);
     m_values->ModSubEq(*element.m_values);
     this->indicate_modified_orig();
+    inc_compute_not_implemented();
     return *this;
 }
 
@@ -704,6 +713,8 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::AutomorphismTransform(uint32_t k,
     for (uint32_t j = 0; j < n; ++j)
         (*tmp.m_values_shadow.m_values)[j] = (*m_values_shadow.m_values)[precomp[j]];
 
+    inc_compute_implemented();
+    
     tmp.indicate_modified_shadow();
     return tmp;
 }
@@ -785,6 +796,7 @@ void PolyImpl<NativeVector>::SwitchModulus(const Integer& modulus, const Integer
         auto c{m_params->GetCyclotomicOrder()};
         m_params = std::make_shared<PolyImpl::Params>(c, modulus, rootOfUnity, modulusArb, rootOfUnityArb);
     }
+    inc_compute_implemented();
 }
 
 template <typename VecType>
@@ -841,6 +853,7 @@ void PolyImpl<NativeVector>::SwitchFormat() {
     this->copy_to_shadow();
     ChineseRemainderTransformFTT<NativeVector>().ForwardTransformToBitReverseInPlace(ru, co, m_values_shadow.get_ptr(),this->GetLength(),m_params->GetModulus().m_value);
     this->indicate_modified_shadow();
+    inc_compute_implemented();
 }
 
 template <typename VecType>

@@ -53,6 +53,15 @@
 #include <utility>
 #include <vector>
 
+void inc_copy_from_shadow();
+void inc_copy_from_shadow_real();
+void inc_copy_to_shadow();
+void inc_copy_to_shadow_real();
+void inc_copy_from_other_shadow();
+void inc_create_shadow();
+void inc_compute_implemented();
+void inc_compute_not_implemented();
+
 namespace lbcrypto {
 
 #define SHADOW_NOTEXIST 0 
@@ -91,19 +100,21 @@ public:
     constexpr PolyImpl() = default;
 
     void copy_from_shadow() const {
+        inc_copy_from_shadow();
         if(m_values == nullptr) {
             usint r{m_params->GetRingDimension()};
             m_values = std::make_unique<VecType>(r, m_params->GetModulus());
         }
 
         if(m_values_shadow.shadow_sync_state == SHADOW_IS_AHEAD) {
-            // *m_values = *m_values_shadow.m_values;                
+            inc_copy_from_shadow_real();
             ::memcpy((char*)&m_values->m_data[0],m_values_shadow.get_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
             m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
         }
     }
 
     void copy_to_shadow() const {
+        inc_copy_to_shadow();
         if(m_values == nullptr) {
             if(m_values_shadow.shadow_sync_state != SHADOW_IS_AHEAD) {
                 OPENFHE_THROW(not_available_error, "m_values not created");
@@ -116,6 +127,7 @@ public:
         }            
         if(m_values_shadow.shadow_sync_state == SHADOW_IS_BEHIND) {
             // *m_values_shadow.m_values = * m_values;    
+            inc_copy_to_shadow_real();   
             ::memcpy(m_values_shadow.get_ptr(),(char*)&m_values->m_data[0],sizeof(uint64_t)*m_params->GetRingDimension());
             m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
         }
@@ -126,7 +138,7 @@ public:
             OPENFHE_THROW(not_available_error, "shadow not created");
         }
         else {
-            // *m_values_shadow.m_values = *other.m_values;
+            inc_copy_from_other_shadow();
             ::memcpy(m_values_shadow.get_ptr(),other.get_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
             m_values_shadow.shadow_sync_state = other.shadow_sync_state;
         }
@@ -135,6 +147,7 @@ public:
         // VecType tmp(m_params->GetRingDimension());
         // m_values_shadow->m_values = tmp;
         // m_values_shadow.m_values = std::make_shared<VecType>(m_params->GetRingDimension());
+        inc_create_shadow();
         m_values_shadow.m_values = std::make_shared<std::vector<uint64_t>>(m_params->GetRingDimension());
         m_values_shadow.shadow_sync_state = SHADOW_IS_BEHIND;
     }
@@ -345,6 +358,7 @@ public:
         rhs.copy_from_shadow();
         tmp.m_values->ModAddNoCheckEq(*rhs.m_values);
         tmp.indicate_modified_orig();
+        inc_compute_not_implemented();
         return tmp;
     }
     PolyImpl PlusNoCheck(const PolyImpl& rhs) const {
@@ -354,6 +368,7 @@ public:
         rhs.copy_from_shadow();
         tmp.m_values->ModAddNoCheckEq(*rhs.m_values);
         tmp.indicate_modified_orig();
+        inc_compute_not_implemented();
         return tmp;
     }
     PolyImpl& operator+=(const PolyImpl& element) override;
@@ -389,6 +404,7 @@ public:
         rhs.copy_from_shadow();
         tmp.m_values->ModMulNoCheckEq(*rhs.m_values);
         tmp.indicate_modified_orig();
+        inc_compute_not_implemented();
         return tmp;
     }
     PolyImpl TimesNoCheck(const PolyImpl& rhs) const {
@@ -398,6 +414,7 @@ public:
         rhs.copy_from_shadow();
         tmp.m_values->ModMulNoCheckEq(*rhs.m_values);
         tmp.indicate_modified_orig();
+        inc_compute_not_implemented();
         return tmp;
     }
     PolyImpl& operator*=(const PolyImpl& rhs) override {
@@ -413,6 +430,7 @@ public:
             rhs.copy_from_shadow();
             m_values->ModMulNoCheckEq(*rhs.m_values);
             this->indicate_modified_orig();
+            inc_compute_not_implemented();
             return *this;
         }
         m_values = std::make_unique<VecType>(m_params->GetRingDimension(), m_params->GetModulus());

@@ -20,6 +20,65 @@
 #include <mutex>
 #include <vector>
 
+#include <iostream>
+
+uint32_t cnt_copy_from_shadow;
+uint32_t cnt_copy_from_shadow_real;
+uint32_t cnt_copy_to_shadow;
+uint32_t cnt_copy_to_shadow_real;
+uint32_t cnt_copy_from_other_shadow;
+uint32_t cnt_create_shadow;
+uint32_t cnt_compute_implemented;
+uint32_t cnt_compute_not_implemented;
+
+void init_stat() {
+    std::cout << "init_stat" << std::endl;
+    cnt_copy_from_shadow = 0;
+    cnt_copy_from_shadow_real = 0;
+    cnt_copy_to_shadow = 0;
+    cnt_copy_to_shadow_real = 0;
+    cnt_copy_from_other_shadow = 0;
+    cnt_create_shadow = 0;
+    cnt_compute_implemented = 0;
+    cnt_compute_not_implemented = 0;
+}
+void print_stat() {
+    std::cout << "print_stat" << std::endl;
+    std::cout << "cnt_copy_from_shadow: " << cnt_copy_from_shadow<< std::endl;
+    std::cout << "cnt_copy_from_shadow_real: " << cnt_copy_from_shadow_real<< std::endl;
+    std::cout << "cnt_copy_to_shadow: " << cnt_copy_to_shadow<< std::endl;
+    std::cout << "cnt_copy_to_shadow_real: " << cnt_copy_to_shadow_real<< std::endl;
+    std::cout << "cnt_copy_from_other_shadow: " << cnt_copy_from_other_shadow<< std::endl;
+    std::cout << "cnt_create_shadow: " << cnt_create_shadow<< std::endl;
+    std::cout << "cnt_compute_implemented: " << cnt_compute_implemented<< std::endl;
+    std::cout << "cnt_compute_not_implemented: " << cnt_compute_not_implemented<< std::endl;
+}
+
+void inc_copy_from_shadow() {
+    cnt_copy_from_shadow++;
+}
+void inc_copy_from_shadow_real()    {
+    cnt_copy_from_shadow_real++;
+}
+void inc_copy_to_shadow()   {
+    cnt_copy_to_shadow++;
+}
+void inc_copy_to_shadow_real()  {
+    cnt_copy_to_shadow_real++;
+}
+void inc_copy_from_other_shadow()   {
+    cnt_copy_from_other_shadow++;
+}
+void inc_create_shadow()    {
+    cnt_create_shadow++;
+}
+void inc_compute_not_implemented()    {
+    cnt_compute_not_implemented++;
+}
+void inc_compute_implemented()    {
+    cnt_compute_implemented++;
+}
+
 
 ////////////////////////////////////////////////////////////
 // make 192bit barrett parameter
