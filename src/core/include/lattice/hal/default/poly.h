@@ -192,6 +192,7 @@ public:
         : m_format{rhs.m_format},
           m_params{rhs.m_params},
           m_values{rhs.m_values ? std::make_unique<VecType>(*rhs.m_values) : nullptr} {
+        OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
         if(rhs.m_values_shadow.shadow_sync_state != SHADOW_NOTEXIST) {
             this->create_shadow();
             this->copy_from_other_shadow(rhs.m_values_shadow);
@@ -368,6 +369,7 @@ public:
     PolyImpl Minus(const Integer& element) const override;
     PolyImpl& operator-=(const Integer& element) override {
         // m_values->ModSubEq(element);
+        OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
         this->copy_from_shadow();
         m_values->ModSubEq(element);
         this->indicate_modified_orig();

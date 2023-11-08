@@ -392,6 +392,7 @@ void PlainModMulEqScalar(uint64_t* op1, uint64_t modulus, uint64_t scalar, size_
 
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Times(const typename VecType::Integer& element) const {
+    OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
     PolyImpl<VecType> tmp(m_params, m_format);
     this->copy_from_shadow();
     tmp.SetValues((*m_values).ModMul(element), m_format);
@@ -422,6 +423,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Times(const typename NativeVector
 
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Times(NativeInteger::SignedNativeInt element) const {
+    OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
     PolyImpl<VecType> tmp(m_params, m_format);
     Integer q{m_params->GetModulus()};
     this->copy_from_shadow();
@@ -491,6 +493,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Times(NativeInteger::SignedNative
 
 template <typename VecType>
 PolyImpl<VecType>& PolyImpl<VecType>::operator*=(const Integer& element) {
+    OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
     // m_values->ModMulEq(element);
     this->copy_from_shadow();
     m_values->ModMulEq(element);
@@ -555,6 +558,7 @@ PolyImpl<VecType> PolyImpl<VecType>::Negate() const {
 
 template <typename VecType>
 PolyImpl<VecType>& PolyImpl<VecType>::operator+=(const PolyImpl& element) {
+    OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
     this->copy_from_shadow();
     element.copy_from_shadow();
     if (!m_values)
@@ -667,6 +671,7 @@ PolyImpl<VecType> PolyImpl<VecType>::AutomorphismTransform(uint32_t k) const {
 
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::AutomorphismTransform(uint32_t k, const std::vector<uint32_t>& precomp) const {
+    OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
     if ((m_format != Format::EVALUATION) || (m_params->GetRingDimension() != (m_params->GetCyclotomicOrder() >> 1)))
         OPENFHE_THROW(not_implemented_error, "Automorphism Poly Format not EVALUATION or not power-of-two");
     if (k % 2 == 0)
@@ -743,6 +748,7 @@ void PolyImpl<VecType>::SwitchModulus(const Integer& modulus, const Integer& roo
 
 template <typename VecType>
 void PolyImpl<VecType>::SwitchFormat() {
+    OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
     const auto& co{m_params->GetCyclotomicOrder()};
     const auto& rd{m_params->GetRingDimension()};
     const auto& ru{m_params->GetRootOfUnity()};
@@ -934,6 +940,7 @@ std::vector<PolyImpl<VecType>> PolyImpl<VecType>::PowersOfBase(usint baseBits) c
 
 template <typename VecType>
 typename PolyImpl<VecType>::PolyNative PolyImpl<VecType>::DecryptionCRTInterpolate(PlaintextModulus ptm) const {
+    OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
     const PolyImpl<VecType> smaller(PolyImpl<VecType>::Mod(ptm));
     smaller.copy_from_shadow();
     usint vlen{m_params->GetRingDimension()};
