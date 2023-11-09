@@ -257,51 +257,42 @@ void PolyImpl<VecType>::SetValuesShadow(VecType&& values, Format format) {
 
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Plus(const typename VecType::Integer& element) const {
+    OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
     PolyImpl<VecType> tmp(m_params, m_format);
     this->copy_from_shadow();
     if (m_format == Format::COEFFICIENT)
         tmp.SetValues((*m_values).ModAddAtIndex(0, element), m_format);
         // tmp.SetValuesShadow((*m_values_shadow.m_values).ModAddAtIndex(0, element), m_format);
-    else{
+    else
         tmp.SetValues((*m_values).ModAdd(element), m_format);
         // tmp.SetValuesShadow((*m_values_shadow.m_values).ModAdd(element), m_format);
-    }
     inc_compute_not_implemented();
     return tmp;
 }
 
 //c++ explicit template specialization!
-// template <>
-// PolyImpl<NativeVector> PolyImpl<NativeVector>::Plus(const typename NativeVector::Integer& element) const {
-//     PolyImpl<NativeVector> tmp(m_params, m_format);
-//     this->copy_to_shadow();
-//     tmp.copy_to_shadow();
-//     // if (m_format == Format::COEFFICIENT){
-//     //     OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
-//     //     tmp.SetValues((*m_values).ModAddAtIndex(0, element), m_format);
-//     //     // tmp.SetValuesShadow((*m_values_shadow.m_values).ModAddAtIndex(0, element), m_format);
-//     // }
-//     // else
-//     //     tmp.SetValues((*m_values).ModAdd(element), m_format);
-//     //     // tmp.SetValuesShadow((*m_values_shadow.m_values).ModAdd(element), m_format);
-    
-//     uint64_t* op1       = m_values_shadow.get_ptr();
-//     const uint64_t* op2 = element.m_values_shadow.get_ptr();
-    
-//     uint64_t modulus = m_params->GetModulus().m_value;
+template <>
+PolyImpl<NativeVector> PolyImpl<NativeVector>::Plus(const typename NativeVector::Integer& element) const {
+    PolyImpl<NativeVector> tmp(m_params, m_format);
+    tmp.create_shadow();
 
-//     for(size_t i=0; i<m_values_shadow.m_values->size(); i++){
-//         uint64_t sum = op1[i] + op2[i];
-//         op1[i] = sum >= modulus ? sum - modulus : sum;
-//     }
-
-//     this->indicate_modified_shadow();
+    this->copy_to_shadow();
     
-//     inc_compute_implemented();
+    uint64_t* op1       = m_values_shadow.get_ptr();
+    uint64_t* result    = tmp.m_values_shadow.get_ptr();
+    uint64_t modulus    = m_params->GetModulus().m_value;
 
-//     tmp.indicate_modified_shadow();
-//     return tmp;
-// }
+    for(size_t i=0; i<m_values_shadow.m_values->size(); i++){
+        uint64_t x = op1[i];
+        x += element.ConvertToInt();
+        result[i] = x >= modulus ? x - modulus : x;
+    }
+
+    tmp.indicate_modified_shadow();
+    
+    inc_compute_implemented();
+    return tmp;
+}
 
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Minus(const typename VecType::Integer& element) const {
