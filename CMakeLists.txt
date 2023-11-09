@@ -62,9 +62,9 @@ if ( EMSCRIPTEN )
 else()
     option( BUILD_SHARED "Set to ON to build shared versions of the library"         ON  )
     option( BUILD_STATIC "Set to ON to build static versions of the library"         OFF )
-    option( BUILD_UNITTESTS "Set to ON to build unit tests for the library"          ON  )
+    option( BUILD_UNITTESTS "Set to ON to build unit tests for the library"          OFF ) # ON -> OFF
     option( BUILD_EXAMPLES "Set to ON to build examples for the library"             ON  )
-    option( BUILD_BENCHMARKS "Set to ON to build benchmarks for the library"         ON  )
+    option( BUILD_BENCHMARKS "Set to ON to build benchmarks for the library"         OFF ) # ON -> OFF
     option( WITH_OPENMP "Use OpenMP to enable <omp.h>"                               ON  )
 endif()
 

@@ -262,12 +262,46 @@ PolyImpl<VecType> PolyImpl<VecType>::Plus(const typename VecType::Integer& eleme
     if (m_format == Format::COEFFICIENT)
         tmp.SetValues((*m_values).ModAddAtIndex(0, element), m_format);
         // tmp.SetValuesShadow((*m_values_shadow.m_values).ModAddAtIndex(0, element), m_format);
-    else
+    else{
         tmp.SetValues((*m_values).ModAdd(element), m_format);
         // tmp.SetValuesShadow((*m_values_shadow.m_values).ModAdd(element), m_format);
+    }
     inc_compute_not_implemented();
     return tmp;
 }
+
+//c++ explicit template specialization!
+// template <>
+// PolyImpl<NativeVector> PolyImpl<NativeVector>::Plus(const typename NativeVector::Integer& element) const {
+//     PolyImpl<NativeVector> tmp(m_params, m_format);
+//     this->copy_to_shadow();
+//     tmp.copy_to_shadow();
+//     // if (m_format == Format::COEFFICIENT){
+//     //     OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
+//     //     tmp.SetValues((*m_values).ModAddAtIndex(0, element), m_format);
+//     //     // tmp.SetValuesShadow((*m_values_shadow.m_values).ModAddAtIndex(0, element), m_format);
+//     // }
+//     // else
+//     //     tmp.SetValues((*m_values).ModAdd(element), m_format);
+//     //     // tmp.SetValuesShadow((*m_values_shadow.m_values).ModAdd(element), m_format);
+    
+//     uint64_t* op1       = m_values_shadow.get_ptr();
+//     const uint64_t* op2 = element.m_values_shadow.get_ptr();
+    
+//     uint64_t modulus = m_params->GetModulus().m_value;
+
+//     for(size_t i=0; i<m_values_shadow.m_values->size(); i++){
+//         uint64_t sum = op1[i] + op2[i];
+//         op1[i] = sum >= modulus ? sum - modulus : sum;
+//     }
+
+//     this->indicate_modified_shadow();
+    
+//     inc_compute_implemented();
+
+//     tmp.indicate_modified_shadow();
+//     return tmp;
+// }
 
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Minus(const typename VecType::Integer& element) const {
@@ -600,6 +634,7 @@ PolyImpl<NativeVector>& PolyImpl<NativeVector>::operator+=(const PolyImpl& eleme
 
 template <typename VecType>
 PolyImpl<VecType>& PolyImpl<VecType>::operator-=(const PolyImpl& element) {
+    OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
     this->copy_from_shadow();
     element.copy_from_shadow();
     if (!m_values)
@@ -608,6 +643,29 @@ PolyImpl<VecType>& PolyImpl<VecType>::operator-=(const PolyImpl& element) {
     m_values->ModSubEq(*element.m_values);
     this->indicate_modified_orig();
     inc_compute_not_implemented();
+    return *this;
+}
+
+template <>
+PolyImpl<NativeVector>& PolyImpl<NativeVector>::operator-=(const PolyImpl& element) {
+    this->copy_to_shadow();
+    element.copy_to_shadow();
+
+    uint64_t* op1       = m_values_shadow.get_ptr();
+    const uint64_t* op2 = element.m_values_shadow.get_ptr();
+    uint64_t modulus = m_params->GetModulus().m_value;
+
+    // m_values->ModSubEq(*element.m_values); // replace
+    unsigned long long temp_result;
+    for(size_t i=0; i<m_values_shadow.m_values->size(); i++){
+        temp_result = op1[i] - op2[i];
+        std::int64_t borrow = static_cast<unsigned char>(op2[i] > op1[i]);
+        op1[i] = temp_result + (modulus & static_cast<std::uint64_t>(-borrow));
+    }
+
+    this->indicate_modified_shadow();
+
+    inc_compute_implemented();
     return *this;
 }
 
