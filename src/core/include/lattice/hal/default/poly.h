@@ -443,12 +443,23 @@ public:
     }
     PolyImpl TimesNoCheck(const PolyImpl& rhs) const {
         auto tmp(*this);
-        // tmp.m_values->ModMulNoCheckEq(*rhs.m_values);
-        tmp.copy_from_shadow();
-        rhs.copy_from_shadow();
-        tmp.m_values->ModMulNoCheckEq(*rhs.m_values);
-        tmp.indicate_modified_orig();
-        inc_compute_not_implemented();
+
+        tmp.copy_to_shadow();
+        rhs.copy_to_shadow();
+
+        uint64_t* op1 = tmp.m_values_shadow.get_ptr();
+        const uint64_t* op2 = rhs.m_values_shadow.get_ptr();
+
+        PlainModMul(
+            op1,
+            op2,
+            m_params->GetModulus().ConvertToInt(),
+            rhs.m_values_shadow.m_values->size()
+        );
+        
+        tmp.indicate_modified_shadow();
+        inc_compute_implemented();
+
         return tmp;
     }
     PolyImpl& operator*=(const PolyImpl& rhs) override {
