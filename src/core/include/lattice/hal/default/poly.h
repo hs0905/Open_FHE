@@ -353,12 +353,23 @@ public:
         if (m_format != rhs.m_format)
             OPENFHE_THROW(not_implemented_error, "Format missmatch");
         auto tmp(*this);
-        // tmp.m_values->ModAddNoCheckEq(*rhs.m_values);
-        tmp.copy_from_shadow();
-        rhs.copy_from_shadow();
-        tmp.m_values->ModAddNoCheckEq(*rhs.m_values);
-        tmp.indicate_modified_orig();
-        inc_compute_not_implemented();
+
+        tmp.copy_to_shadow();
+        rhs.copy_to_shadow();
+
+        uint64_t* op1       = tmp.m_values_shadow.get_ptr();
+        const uint64_t* op2 = rhs.m_values_shadow.get_ptr();
+
+        uint64_t modulus = m_params->GetModulus().ConvertToInt();
+
+        for(size_t i=0; i<tmp.m_values_shadow.m_values->size(); i++){
+            uint64_t sum = op1[i] + op2[i];
+            op1[i] = sum >= modulus ? sum - modulus : sum;
+        }
+
+        tmp.indicate_modified_shadow();
+        inc_compute_implemented();
+
         return tmp;
     }
     PolyImpl PlusNoCheck(const PolyImpl& rhs) const {
