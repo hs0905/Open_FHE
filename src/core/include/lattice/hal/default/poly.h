@@ -469,34 +469,26 @@ public:
             OPENFHE_THROW(math_error, "Modulus missmatch");
         if (m_format != Format::EVALUATION || rhs.m_format != Format::EVALUATION)
             OPENFHE_THROW(not_implemented_error, "operator* for PolyImpl supported only in Format::EVALUATION");
-        this->copy_from_shadow();
-        if (m_values) {
-            rhs.copy_from_shadow();
-            m_values->ModMulNoCheckEq(*rhs.m_values);
-            this->indicate_modified_orig();
-            inc_compute_not_implemented();
 
-            // this->copy_to_shadow();
-            // rhs.copy_to_shadow();
+        if (!m_values)
+            m_values = std::make_unique<VecType>(m_params->GetRingDimension(), m_params->GetModulus());
 
-            // uint64_t* op1 = this->m_values_shadow.get_ptr();
-            // const uint64_t* op2 = rhs.m_values_shadow.get_ptr();
+        this->copy_to_shadow();
+        rhs.copy_to_shadow();
 
-            // PlainModMul(
-            //     op1,
-            //     op2,
-            //     m_params->GetModulus().ConvertToInt(),
-            //     rhs.m_values_shadow.m_values->size()
-            // );
-            
-            // this->indicate_modified_shadow();
-            // inc_compute_implemented();
+        uint64_t* op1 = this->m_values_shadow.get_ptr();
+        const uint64_t* op2 = rhs.m_values_shadow.get_ptr();
 
-            return *this;
-        }
-        // this->copy_from_shadow();
-        m_values = std::make_unique<VecType>(m_params->GetRingDimension(), m_params->GetModulus());
-        this->indicate_modified_orig();
+        PlainModMul(
+            op1,
+            op2,
+            m_params->GetModulus().ConvertToInt(),
+            rhs.m_values_shadow.m_values->size()
+        );
+        
+        this->indicate_modified_shadow();
+        inc_compute_implemented();
+
         return *this;
     }
 
