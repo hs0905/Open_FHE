@@ -62,6 +62,8 @@ void inc_create_shadow();
 void inc_compute_implemented();
 void inc_compute_not_implemented();
 
+extern void PlainModMul(uint64_t* op1, const uint64_t* op2, uint64_t modulus, size_t size);
+
 namespace lbcrypto {
 
 #define SHADOW_NOTEXIST 0 
@@ -420,12 +422,23 @@ public:
         if (m_format != Format::EVALUATION || rhs.m_format != Format::EVALUATION)
             OPENFHE_THROW(not_implemented_error, "operator* for PolyImpl supported only in Format::EVALUATION");
         auto tmp(*this);
-        // tmp.m_values->ModMulNoCheckEq(*rhs.m_values);
-        tmp.copy_from_shadow();
-        rhs.copy_from_shadow();
-        tmp.m_values->ModMulNoCheckEq(*rhs.m_values);
-        tmp.indicate_modified_orig();
-        inc_compute_not_implemented();
+
+        tmp.copy_to_shadow();
+        rhs.copy_to_shadow();
+
+        uint64_t* op1 = tmp.m_values_shadow.get_ptr();
+        const uint64_t* op2 = rhs.m_values_shadow.get_ptr();
+
+        PlainModMul(
+            op1,
+            op2,
+            m_params->GetModulus().ConvertToInt(),
+            rhs.m_values_shadow.m_values->size()
+        );
+        
+        tmp.indicate_modified_shadow();
+        inc_compute_implemented();
+
         return tmp;
     }
     PolyImpl TimesNoCheck(const PolyImpl& rhs) const {
