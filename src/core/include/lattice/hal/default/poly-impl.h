@@ -296,11 +296,37 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Plus(const typename NativeVector:
 
 template <typename VecType>
 PolyImpl<VecType> PolyImpl<VecType>::Minus(const typename VecType::Integer& element) const {
+    OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
     PolyImpl<VecType> tmp(m_params, m_format);
     this->copy_from_shadow();
     tmp.SetValues((*m_values).ModSub(element), m_format);
     // tmp.SetValuesShadow((*m_values_shadow.m_values).ModSub(element), m_format);
     inc_compute_not_implemented();
+    return tmp;
+}
+
+template <>
+PolyImpl<NativeVector> PolyImpl<NativeVector>::Minus(const typename NativeVector::Integer& element) const {
+    PolyImpl<NativeVector> tmp(m_params, m_format);
+    tmp.create_shadow();
+
+    this->copy_to_shadow();
+    
+    uint64_t* op1       = m_values_shadow.get_ptr();
+    uint64_t* result    = tmp.m_values_shadow.get_ptr();
+    uint64_t modulus    = m_params->GetModulus().m_value;
+
+    for(size_t i=0; i<m_values_shadow.m_values->size(); i++){
+        uint64_t x = op1[i];
+        unsigned long long temp = x - element.ConvertToInt();;
+        std::int64_t borrow = (temp > x);
+        result[i] = static_cast<std::uint64_t>(temp) + (modulus & static_cast<std::uint64_t>(-borrow));
+    }
+
+    tmp.indicate_modified_shadow();
+    
+    inc_compute_implemented();
+
     return tmp;
 }
 
