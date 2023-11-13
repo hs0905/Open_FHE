@@ -41,6 +41,7 @@
 #include "utils/inttypes.h"
 
 #include <map>
+#include <memory>
 #include <mutex>
 #include <unordered_map>
 #include <utility>
@@ -161,7 +162,7 @@ public:
     void ForwardTransformToBitReverseInPlace(const VecType& rootOfUnityTable, const VecType& preconRootOfUnityTable,
                                              VecType* element);
                                              
-    void ForwardTransformToBitReverseInPlace(const VecType& rootOfUnityTable, const VecType& preconRootOfUnityTable,
+    void ForwardTransformToBitReverseInPlace(const uint64_t* rootOfUnityTable, const uint64_t* preconRootOfUnityTable,
                                               uint64_t* element, size_t N, uint64_t modulus);
 
     /**
@@ -243,8 +244,8 @@ public:
                                                const IntType& cycloOrderInv, const IntType& preconCycloOrderInv,
                                                VecType* element);
 
-    void InverseTransformFromBitReverseInPlace(const VecType& rootOfUnityInverseTable,
-                                               const VecType& preconRootOfUnityInverseTable,
+    void InverseTransformFromBitReverseInPlace(const uint64_t* rootOfUnityInverseTable,
+                                               const uint64_t* preconRootOfUnityInverseTable,
                                                const IntType& cycloOrderInv, const IntType& preconCycloOrderInv,
                                                uint64_t* element, size_t N, uint64_t modulus);
 };
@@ -369,15 +370,19 @@ public:
 
     /// map to store the forward roots of Unity for NTT, with bits reversed, with modulus as a key (aka twiddle factors)
     static std::map<IntType, VecType> m_rootOfUnityReverseTableByModulus;
+    static std::map<IntType, std::shared_ptr<std::vector<uint64_t>>> m_rootOfUnityReverseTableByModulusShadow;
 
     /// map to store inverse roots of unity for iNTT, with bits reversed, with modulus as a key (aka inverse twiddle factors)
     static std::map<IntType, VecType> m_rootOfUnityInverseReverseTableByModulus;
+    static std::map<IntType, std::shared_ptr<std::vector<uint64_t>>> m_rootOfUnityInverseReverseTableByModulusShadow;
 
     /// map to store Shoup's precomputations of forward roots of unity for NTT, with bits reversed, with modulus as a key
     static std::map<IntType, VecType> m_rootOfUnityPreconReverseTableByModulus;
+    static std::map<IntType, std::shared_ptr<std::vector<uint64_t>>> m_rootOfUnityPreconReverseTableByModulusShadow;
 
     /// map to store Shoup's precomputations of inverse rou for iNTT, with bits reversed, with modulus as a key
     static std::map<IntType, VecType> m_rootOfUnityInversePreconReverseTableByModulus;
+    static std::map<IntType, std::shared_ptr<std::vector<uint64_t>>> m_rootOfUnityInversePreconReverseTableByModulusShadow;
 };
 
 // struct used as a key in BlueStein transform

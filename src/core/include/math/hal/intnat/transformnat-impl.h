@@ -49,6 +49,10 @@
 #include <map>
 #include <vector>
 
+
+void inc_copy_to_root_shadow();
+void inc_create_root_shadow();
+
 namespace intnat {
 
 template <typename VecType>
@@ -64,16 +68,32 @@ std::map<typename VecType::Integer, VecType>
     ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityReverseTableByModulus;
 
 template <typename VecType>
+std::map<typename VecType::Integer, std::shared_ptr<std::vector<uint64_t>>>
+    ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityReverseTableByModulusShadow;
+
+template <typename VecType>
 std::map<typename VecType::Integer, VecType>
     ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityInverseReverseTableByModulus;
+
+template <typename VecType>
+std::map<typename VecType::Integer, std::shared_ptr<std::vector<uint64_t>>>
+    ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityInverseReverseTableByModulusShadow;
 
 template <typename VecType>
 std::map<typename VecType::Integer, VecType>
     ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityPreconReverseTableByModulus;
 
 template <typename VecType>
+std::map<typename VecType::Integer, std::shared_ptr<std::vector<uint64_t>>>
+    ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityPreconReverseTableByModulusShadow;
+
+template <typename VecType>
 std::map<typename VecType::Integer, VecType>
     ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityInversePreconReverseTableByModulus;
+
+template <typename VecType>
+std::map<typename VecType::Integer, std::shared_ptr<std::vector<uint64_t>>>
+    ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityInversePreconReverseTableByModulusShadow;
 
 template <typename VecType>
 std::map<typename VecType::Integer, VecType> ChineseRemainderTransformArbNat<VecType>::m_cyclotomicPolyMap;
@@ -356,8 +376,8 @@ void NumberTheoreticTransformNat<VecType>::ForwardTransformToBitReverseInPlace(c
 
 
 template <typename VecType>
-void NumberTheoreticTransformNat<VecType>::ForwardTransformToBitReverseInPlace(const VecType& rootOfUnityTable,
-                                                                               const VecType& preconRootOfUnityTable,
+void NumberTheoreticTransformNat<VecType>::ForwardTransformToBitReverseInPlace(const uint64_t* rootOfUnityTable,
+                                                                               const uint64_t* preconRootOfUnityTable,
                                                                                uint64_t* element, size_t N, uint64_t modulus) {
     uint64_t p = modulus;
 
@@ -374,8 +394,8 @@ void NumberTheoreticTransformNat<VecType>::ForwardTransformToBitReverseInPlace(c
 
         for (size_t i = 0; i < m; i++)  {
             root_idx++;
-            uint64_t r_operand = rootOfUnityTable[root_idx].ConvertToInt();
-            uint64_t r_quotient = preconRootOfUnityTable[root_idx].ConvertToInt();
+            uint64_t r_operand = rootOfUnityTable[root_idx];
+            uint64_t r_quotient = preconRootOfUnityTable[root_idx];
             
             for (size_t j = 0; j < gap; j++)
             {
@@ -607,7 +627,7 @@ void NumberTheoreticTransformNat<VecType>::InverseTransformFromBitReverseInPlace
 
 template <typename VecType>
 void NumberTheoreticTransformNat<VecType>::InverseTransformFromBitReverseInPlace(
-    const VecType& rootOfUnityInverseTable, const VecType& preconRootOfUnityInverseTable, const IntType& cycloOrderInv,
+    const uint64_t* rootOfUnityInverseTable, const uint64_t* preconRootOfUnityInverseTable, const IntType& cycloOrderInv,
     const IntType& preconCycloOrderInv, uint64_t* element, size_t N, uint64_t modulus) {
     uint64_t x;
     uint64_t y;
@@ -625,8 +645,8 @@ void NumberTheoreticTransformNat<VecType>::InverseTransformFromBitReverseInPlace
 
         for (size_t i = 0; i < m; i++)  {
         root_idx++;
-        uint64_t r_quotient = preconRootOfUnityInverseTable[root_idx].ConvertToInt();
-        uint64_t r_operand = rootOfUnityInverseTable[root_idx].ConvertToInt();
+        uint64_t r_quotient = preconRootOfUnityInverseTable[root_idx];
+        uint64_t r_operand = rootOfUnityInverseTable[root_idx];
         
         for (size_t j = 0; j < gap; j++)
         {
@@ -740,8 +760,11 @@ void ChineseRemainderTransformFTTNat<VecType>::ForwardTransformToBitReverseInPla
         PreCompute(rootOfUnity, CycloOrder, modulus);
     }
 
+    uint64_t* tmp_rootShadow = &(*m_rootOfUnityReverseTableByModulusShadow[modulus])[0];
+    uint64_t* tmp_preconShadow = &(*m_rootOfUnityPreconReverseTableByModulusShadow[modulus])[0];
+
     NumberTheoreticTransformNat<NativeVector>().ForwardTransformToBitReverseInPlace(
-        m_rootOfUnityReverseTableByModulus[modulus], m_rootOfUnityPreconReverseTableByModulus[modulus], element, N, modulus);
+        tmp_rootShadow, tmp_preconShadow, element, N, modulus);
 }
 
 template <typename VecType>
@@ -829,9 +852,12 @@ void ChineseRemainderTransformFTTNat<VecType>::InverseTransformFromBitReverseInP
         PreCompute(rootOfUnity, CycloOrder, modulus);
     }
 
+    uint64_t* tmp_rootIShadow = &(*m_rootOfUnityInverseReverseTableByModulusShadow[modulus])[0];
+    uint64_t* tmp_preconIShadow = &(*m_rootOfUnityInversePreconReverseTableByModulusShadow[modulus])[0];
+
     usint msb = lbcrypto::GetMSB(CycloOrderHf - 1);
     NumberTheoreticTransformNat<VecType>().InverseTransformFromBitReverseInPlace(
-        m_rootOfUnityInverseReverseTableByModulus[modulus], m_rootOfUnityInversePreconReverseTableByModulus[modulus],
+        tmp_rootIShadow, tmp_preconIShadow,
         m_cycloOrderInverseTableByModulus[modulus][msb], m_cycloOrderInversePreconTableByModulus[modulus][msb],
         element,  N, modulus);
 }
@@ -904,6 +930,22 @@ void ChineseRemainderTransformFTTNat<VecType>::PreCompute(const IntType& rootOfU
             m_rootOfUnityReverseTableByModulus[modulus]        = Table;
             m_rootOfUnityInverseReverseTableByModulus[modulus] = TableI;
 
+            uint64_t* tmp_root = reinterpret_cast<uint64_t*>(&m_rootOfUnityReverseTableByModulus[modulus][0]);
+            uint64_t* tmp_rootI = reinterpret_cast<uint64_t*>(&m_rootOfUnityInverseReverseTableByModulus[modulus][0]);
+
+            m_rootOfUnityReverseTableByModulusShadow[modulus] = std::make_shared<std::vector<uint64_t>>(CycloOrderHf);
+            inc_create_root_shadow();
+            m_rootOfUnityInverseReverseTableByModulusShadow[modulus] = std::make_shared<std::vector<uint64_t>>(CycloOrderHf);
+            inc_create_root_shadow();
+
+            std::shared_ptr<std::vector<uint64_t>> tmp_rootShadow = m_rootOfUnityReverseTableByModulusShadow[modulus];
+            std::shared_ptr<std::vector<uint64_t>> tmp_rootIShadow = m_rootOfUnityInverseReverseTableByModulusShadow[modulus];
+
+            ::memcpy(&(*tmp_rootShadow)[0],tmp_root,sizeof(uint64_t)*CycloOrderHf);
+            inc_copy_to_root_shadow();
+            ::memcpy(&(*tmp_rootIShadow)[0],tmp_rootI,sizeof(uint64_t)*CycloOrderHf);
+            inc_copy_to_root_shadow();
+
             VecType TableCOI(msb + 1, modulus);
             for (usint i = 0; i < msb + 1; i++) {
                 IntType coInv(IntType(1 << i).ModInverse(modulus));
@@ -930,6 +972,23 @@ void ChineseRemainderTransformFTTNat<VecType>::PreCompute(const IntType& rootOfU
 
             m_rootOfUnityPreconReverseTableByModulus[modulus]        = preconTable;
             m_rootOfUnityInversePreconReverseTableByModulus[modulus] = preconTableI;
+
+            uint64_t* tmp_precon = reinterpret_cast<uint64_t*>(&m_rootOfUnityPreconReverseTableByModulus[modulus][0]);
+            uint64_t* tmp_preconI = reinterpret_cast<uint64_t*>(&m_rootOfUnityInversePreconReverseTableByModulus[modulus][0]);
+
+            m_rootOfUnityPreconReverseTableByModulusShadow[modulus] = std::make_shared<std::vector<uint64_t>>(CycloOrderHf);
+            inc_create_root_shadow();
+            m_rootOfUnityInversePreconReverseTableByModulusShadow[modulus] = std::make_shared<std::vector<uint64_t>>(CycloOrderHf);
+            inc_create_root_shadow();
+
+            std::shared_ptr<std::vector<uint64_t>> tmp_preconShadow = m_rootOfUnityPreconReverseTableByModulusShadow[modulus];
+            std::shared_ptr<std::vector<uint64_t>> tmp_preconIShadow = m_rootOfUnityInversePreconReverseTableByModulusShadow[modulus];
+
+            ::memcpy(&(*tmp_preconShadow)[0],tmp_precon,sizeof(uint64_t)*CycloOrderHf);
+            inc_copy_to_root_shadow();
+            ::memcpy(&(*tmp_preconIShadow)[0],tmp_preconI,sizeof(uint64_t)*CycloOrderHf);
+            inc_copy_to_root_shadow();
+
             m_cycloOrderInversePreconTableByModulus[modulus]         = preconTableCOI;
         }
     }
