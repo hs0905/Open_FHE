@@ -62,6 +62,9 @@ void inc_create_shadow();
 void inc_compute_implemented();
 void inc_compute_not_implemented();
 
+#include "utils/custom_task.h"
+extern WorkQueue work_queue;
+
 extern void PlainModMul(uint64_t* op1, const uint64_t* op2, uint64_t modulus, size_t size);
 
 namespace lbcrypto {
@@ -356,42 +359,31 @@ public:
             OPENFHE_THROW(not_implemented_error, "Format missmatch");
         auto tmp(*this);
 
-        tmp.copy_to_shadow();
-        rhs.copy_to_shadow();
+        CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_Plus);
 
-        uint64_t* op1       = tmp.m_values_shadow.get_ptr();
-        const uint64_t* op2 = rhs.m_values_shadow.get_ptr();
+        item->poly = (void*)this;
+        item->poly2 = (void*)&tmp;
+        item->poly3 = (void*)&rhs;
 
-        uint64_t modulus = m_params->GetModulus().ConvertToInt();
+        work_queue.addWork(item);
 
-        for(size_t i=0; i<tmp.m_values_shadow.m_values->size(); i++){
-            uint64_t sum = op1[i] + op2[i];
-            op1[i] = sum >= modulus ? sum - modulus : sum;
-        }
-
-        tmp.indicate_modified_shadow();
-        inc_compute_implemented();
+        delete item; // Clean up
 
         return tmp;
     }
     PolyImpl PlusNoCheck(const PolyImpl& rhs) const {
         auto tmp(*this);
-        tmp.copy_to_shadow();
-        rhs.copy_to_shadow();
 
-        uint64_t* op1       = tmp.m_values_shadow.get_ptr();
-        const uint64_t* op2 = rhs.m_values_shadow.get_ptr();
+        CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_Plus);
 
-        uint64_t modulus = m_params->GetModulus().ConvertToInt();
+        item->poly = (void*)this;
+        item->poly2 = (void*)&tmp;
+        item->poly3 = (void*)&rhs;
 
-        for(size_t i=0; i<tmp.m_values_shadow.m_values->size(); i++){
-            uint64_t sum = op1[i] + op2[i];
-            op1[i] = sum >= modulus ? sum - modulus : sum;
-        }
+        work_queue.addWork(item);
 
-        tmp.indicate_modified_shadow();
-        inc_compute_implemented();
-        
+        delete item; // Clean up
+
         return tmp;
     }
     PolyImpl& operator+=(const PolyImpl& element) override;
@@ -423,42 +415,30 @@ public:
             OPENFHE_THROW(not_implemented_error, "operator* for PolyImpl supported only in Format::EVALUATION");
         auto tmp(*this);
 
-        tmp.copy_to_shadow();
-        rhs.copy_to_shadow();
+        CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_Times);
 
-        uint64_t* op1 = tmp.m_values_shadow.get_ptr();
-        const uint64_t* op2 = rhs.m_values_shadow.get_ptr();
+        item->poly = (void*)this;
+        item->poly2 = (void*)&tmp;
+        item->poly3 = (void*)&rhs;
 
-        PlainModMul(
-            op1,
-            op2,
-            m_params->GetModulus().ConvertToInt(),
-            rhs.m_values_shadow.m_values->size()
-        );
-        
-        tmp.indicate_modified_shadow();
-        inc_compute_implemented();
+        work_queue.addWork(item);
+
+        delete item; // Clean up
 
         return tmp;
     }
     PolyImpl TimesNoCheck(const PolyImpl& rhs) const {
         auto tmp(*this);
 
-        tmp.copy_to_shadow();
-        rhs.copy_to_shadow();
+        CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_Times);
 
-        uint64_t* op1 = tmp.m_values_shadow.get_ptr();
-        const uint64_t* op2 = rhs.m_values_shadow.get_ptr();
+        item->poly = (void*)this;
+        item->poly2 = (void*)&tmp;
+        item->poly3 = (void*)&rhs;
 
-        PlainModMul(
-            op1,
-            op2,
-            m_params->GetModulus().ConvertToInt(),
-            rhs.m_values_shadow.m_values->size()
-        );
-        
-        tmp.indicate_modified_shadow();
-        inc_compute_implemented();
+        work_queue.addWork(item);
+
+        delete item; // Clean up
 
         return tmp;
     }
@@ -473,21 +453,14 @@ public:
         if (!m_values)
             m_values = std::make_unique<VecType>(m_params->GetRingDimension(), m_params->GetModulus());
 
-        this->copy_to_shadow();
-        rhs.copy_to_shadow();
+        CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_TimesInPlace);
 
-        uint64_t* op1 = this->m_values_shadow.get_ptr();
-        const uint64_t* op2 = rhs.m_values_shadow.get_ptr();
+        item->poly = (void*)this;
+        item->poly2 = (void*)&rhs;
 
-        PlainModMul(
-            op1,
-            op2,
-            m_params->GetModulus().ConvertToInt(),
-            rhs.m_values_shadow.m_values->size()
-        );
-        
-        this->indicate_modified_shadow();
-        inc_compute_implemented();
+        work_queue.addWork(item);
+
+        delete item; // Clean up
 
         return *this;
     }
@@ -562,6 +535,7 @@ public:
     }
 
 protected:
+public:
     Format m_format{Format::EVALUATION};
     std::shared_ptr<Params> m_params{nullptr};
     mutable std::unique_ptr<VecType> m_values{nullptr};

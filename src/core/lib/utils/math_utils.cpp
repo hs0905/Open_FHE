@@ -23,6 +23,10 @@
 #include <iostream>
 // #include "math/hal/basicint.h"
 
+#include <thread>
+
+#include "utils/custom_task.h"
+
 uint32_t cnt_copy_from_shadow;
 uint32_t cnt_copy_from_shadow_real;
 uint32_t cnt_copy_to_shadow;
@@ -33,6 +37,13 @@ uint32_t cnt_create_shadow;
 uint32_t cnt_create_root_shadow;
 uint32_t cnt_compute_implemented;
 uint32_t cnt_compute_not_implemented;
+
+WorkQueue work_queue;
+std::thread consumerThread;
+
+namespace lbcrypto{
+extern  void consumer(WorkQueue& queue);
+}
 
 void init_stat() {
     std::cout << "init_stat" << std::endl;
@@ -46,6 +57,8 @@ void init_stat() {
     cnt_create_root_shadow = 0;
     cnt_compute_implemented = 0;
     cnt_compute_not_implemented = 0;
+
+    consumerThread = std::thread(lbcrypto::consumer, std::ref(work_queue));
 }
 void print_stat() {
     std::cout << "print_stat" << std::endl;
@@ -59,6 +72,13 @@ void print_stat() {
     std::cout << "cnt_create_root_shadow: " << cnt_create_root_shadow<< std::endl;
     std::cout << "cnt_compute_implemented: " << cnt_compute_implemented<< std::endl;
     std::cout << "cnt_compute_not_implemented: " << cnt_compute_not_implemented<< std::endl;
+
+    work_queue.finish();
+
+    if (consumerThread.joinable()) {
+        consumerThread.join();
+    }
+
 }
 
 void inc_copy_from_shadow() {

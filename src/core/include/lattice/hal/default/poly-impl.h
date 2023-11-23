@@ -53,6 +53,9 @@
 extern void PlainModMulScalar(uint64_t* res, const uint64_t* op1, uint64_t modulus, uint64_t scalar, size_t size);
 extern void PlainModMulEqScalar(uint64_t* op1, uint64_t modulus, uint64_t scalar, size_t size);
 
+#include "utils/custom_task.h"
+extern WorkQueue work_queue;
+
 namespace lbcrypto {
 
 template <typename VecType>
@@ -275,23 +278,17 @@ PolyImpl<VecType> PolyImpl<VecType>::Plus(const typename VecType::Integer& eleme
 template <>
 PolyImpl<NativeVector> PolyImpl<NativeVector>::Plus(const typename NativeVector::Integer& element) const {
     PolyImpl<NativeVector> tmp(m_params, m_format);
-    tmp.create_shadow();
 
-    this->copy_to_shadow();
-    
-    uint64_t* op1       = m_values_shadow.get_ptr();
-    uint64_t* result    = tmp.m_values_shadow.get_ptr();
-    uint64_t modulus    = m_params->GetModulus().m_value;
+    CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_PlusScalar);
 
-    for(size_t i=0; i<m_values_shadow.m_values->size(); i++){
-        uint64_t x = op1[i];
-        x += element.ConvertToInt();
-        result[i] = x >= modulus ? x - modulus : x;
-    }
+    item->poly = (void*)this;
+    item->poly2 = (void*)&tmp;
+    item->param1 = element.ConvertToInt();
 
-    tmp.indicate_modified_shadow();
-    
-    inc_compute_implemented();
+    work_queue.addWork(item);
+
+    delete item; // Clean up
+
     return tmp;
 }
 
@@ -309,24 +306,16 @@ PolyImpl<VecType> PolyImpl<VecType>::Minus(const typename VecType::Integer& elem
 template <>
 PolyImpl<NativeVector> PolyImpl<NativeVector>::Minus(const typename NativeVector::Integer& element) const {
     PolyImpl<NativeVector> tmp(m_params, m_format);
-    tmp.create_shadow();
-
-    this->copy_to_shadow();
     
-    uint64_t* op1       = m_values_shadow.get_ptr();
-    uint64_t* result    = tmp.m_values_shadow.get_ptr();
-    uint64_t modulus    = m_params->GetModulus().m_value;
+    CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_MinusScalar);
 
-    for(size_t i=0; i<m_values_shadow.m_values->size(); i++){
-        uint64_t x = op1[i];
-        unsigned long long temp = x - element.ConvertToInt();
-        std::int64_t borrow = (temp > x);
-        result[i] = static_cast<std::uint64_t>(temp) + (modulus & static_cast<std::uint64_t>(-borrow));
-    }
+    item->poly = (void*)this;
+    item->poly2 = (void*)&tmp;
+    item->param1 = element.ConvertToInt();
 
-    tmp.indicate_modified_shadow();
-    
-    inc_compute_implemented();
+    work_queue.addWork(item);
+
+    delete item; // Clean up
 
     return tmp;
 }
@@ -344,21 +333,17 @@ PolyImpl<VecType> PolyImpl<VecType>::Times(const typename VecType::Integer& elem
 template <>
 PolyImpl<NativeVector> PolyImpl<NativeVector>::Times(const typename NativeVector::Integer& element) const {
     PolyImpl<NativeVector> tmp(m_params, m_format);    
-    tmp.create_shadow();
+    
+    CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_PlainModMulScalar);
 
-    this->copy_to_shadow();
+    item->poly = (void*)this;
+    item->poly2 = (void*)&tmp;
+    item->param1 = element.m_value;
+
+    work_queue.addWork(item);
     
-    PlainModMulScalar(
-        tmp.m_values_shadow.get_ptr(),
-        m_values_shadow.get_ptr(),
-        m_params->GetModulus().m_value,
-        element.m_value,
-        m_values_shadow.m_values->size()
-    );
-    
-    tmp.indicate_modified_shadow();
-    inc_compute_implemented();
-    // tmp.SetValues((*m_values).ModMul(element), m_format);
+    delete item; // Clean up
+
     return tmp;
 }
 
@@ -389,47 +374,40 @@ PolyImpl<VecType> PolyImpl<VecType>::Times(NativeInteger::SignedNativeInt elemen
 template <>
 PolyImpl<NativeVector> PolyImpl<NativeVector>::Times(NativeInteger::SignedNativeInt element) const {
     PolyImpl<NativeVector> tmp(m_params, m_format);
-    tmp.create_shadow();
 
     Integer q{m_params->GetModulus()};
-    
-    this->copy_to_shadow();
     
     if (element < 0) {
         Integer elementReduced{NativeInteger::Integer(-element)};
         if (elementReduced > q)
             elementReduced.ModEq(q);
         
-        PlainModMulScalar(
-            tmp.m_values_shadow.get_ptr(),
-            m_values_shadow.get_ptr(),
-            m_params->GetModulus().m_value,
-            -element,
-            m_values_shadow.m_values->size()
-        );
-        
-        tmp.indicate_modified_shadow();
+        CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_PlainModMulScalar);
 
-        // tmp.SetValues((*m_values).ModMul(q - elementReduced), m_format);
+        item->poly = (void*)this;
+        item->poly2 = (void*)&tmp;
+        item->param1 = -element;
+
+        work_queue.addWork(item);
+        
+        delete item; // Clean up
+
     }
     else {
         Integer elementReduced{NativeInteger::Integer(element)};
         if (elementReduced > q)
             elementReduced.ModEq(q);
 
-        PlainModMulScalar(
-            tmp.m_values_shadow.get_ptr(),
-            m_values_shadow.get_ptr(),
-            m_params->GetModulus().m_value,
-            elementReduced.m_value,
-            m_values_shadow.m_values->size()
-        );
+        CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_PlainModMulScalar);
+
+        item->poly = (void*)this;
+        item->poly2 = (void*)&tmp;
+        item->param1 = elementReduced.m_value;
+
+        work_queue.addWork(item);
         
-        tmp.indicate_modified_shadow();
-        
-        // tmp.SetValues((*m_values).ModMul(elementReduced), m_format);        
+        delete item; // Clean up
     }
-    inc_compute_implemented();
     return tmp;
 }
 
@@ -445,21 +423,16 @@ PolyImpl<VecType>& PolyImpl<VecType>::operator*=(const Integer& element) {
 
 template <>
 PolyImpl<NativeVector>& PolyImpl<NativeVector>::operator*=(const Integer& element) {        
-    this->copy_to_shadow();
     
-    PlainModMulEqScalar(
-        m_values_shadow.get_ptr(),
-        m_params->GetModulus().m_value,
-        element.m_value,
-        m_values_shadow.m_values->size()
-    );
-    
-    this->indicate_modified_shadow();
-    
-    inc_compute_implemented();
+    CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_PlainModMulEqScalar);
 
-    // m_values->ModMulEq(element);
-    // this->indicate_modified_orig();
+    item->poly = this;
+    item->param1 = element.m_value;
+
+    work_queue.addWork(item);
+
+    delete item; // Clean up
+
     return *this;
 }
 
@@ -479,25 +452,16 @@ PolyImpl<VecType> PolyImpl<VecType>::Minus(const PolyImpl& rhs) const {
 template <>
 PolyImpl<NativeVector> PolyImpl<NativeVector>::Minus(const PolyImpl& rhs) const {
     PolyImpl<NativeVector> tmp(m_params, m_format);
-    tmp.create_shadow();
-    this->copy_to_shadow(); 
-    rhs.copy_to_shadow(); 
-
-    uint64_t* op1       = m_values_shadow.get_ptr();
-    uint64_t* op2       = rhs.m_values_shadow.get_ptr();
-    uint64_t* result    = tmp.m_values_shadow.get_ptr();
-    uint64_t modulus    = m_params->GetModulus().m_value;
-
-    for(size_t i=0; i<m_values_shadow.m_values->size(); i++){
-        uint64_t x = op1[i];
-        unsigned long long temp = x - op2[i];
-        std::int64_t borrow = (temp > x);
-        result[i] = static_cast<std::uint64_t>(temp) + (modulus & static_cast<std::uint64_t>(-borrow));
-    }
-
-    tmp.indicate_modified_shadow();
     
-    inc_compute_implemented();
+    CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_Minus);
+
+    item->poly = (void*)this;
+    item->poly2 = (void*)&tmp;
+    item->poly3 = (void*)&rhs;
+
+    work_queue.addWork(item);
+    
+    delete item; // Clean up
 
     return tmp;
 }
@@ -542,25 +506,14 @@ PolyImpl<VecType>& PolyImpl<VecType>::operator+=(const PolyImpl& element) {
 
 template <>
 PolyImpl<NativeVector>& PolyImpl<NativeVector>::operator+=(const PolyImpl& element) {
-    this->copy_to_shadow();
-    element.copy_to_shadow();
+    CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_PlusInPlace);
 
-    uint64_t* op1       = m_values_shadow.get_ptr();
-    const uint64_t* op2 = element.m_values_shadow.get_ptr();
+    item->poly = (void*)this;
+    item->poly2 = (void*)&element;
+    work_queue.addWork(item);
     
-    uint64_t modulus = m_params->GetModulus().m_value;
-
-    for(size_t i=0; i<m_values_shadow.m_values->size(); i++){
-        uint64_t sum = op1[i] + op2[i];
-        op1[i] = sum >= modulus ? sum - modulus : sum;
-    }
-
-    // m_values->ModAddEq(*element.m_values);
-    
-    this->indicate_modified_shadow();
-
-    inc_compute_implemented();
-
+    delete item; // Clean up
+   
     return *this;
 }
 
@@ -580,24 +533,14 @@ PolyImpl<VecType>& PolyImpl<VecType>::operator-=(const PolyImpl& element) {
 
 template <>
 PolyImpl<NativeVector>& PolyImpl<NativeVector>::operator-=(const PolyImpl& element) {
-    this->copy_to_shadow();
-    element.copy_to_shadow();
+    CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_MinusInPlace);
 
-    uint64_t* op1       = m_values_shadow.get_ptr();
-    const uint64_t* op2 = element.m_values_shadow.get_ptr();
-    uint64_t modulus = m_params->GetModulus().m_value;
+    item->poly = (void*)this;
+    item->poly2 = (void*)&element;
+    work_queue.addWork(item);
+    
+    delete item; // Clean up
 
-    // m_values->ModSubEq(*element.m_values); // replace
-    unsigned long long temp_result;
-    for(size_t i=0; i<m_values_shadow.m_values->size(); i++){
-        temp_result = op1[i] - op2[i];
-        std::int64_t borrow = static_cast<unsigned char>(op2[i] > op1[i]);
-        op1[i] = temp_result + (modulus & static_cast<std::uint64_t>(-borrow));
-    }
-
-    this->indicate_modified_shadow();
-
-    inc_compute_implemented();
     return *this;
 }
 
@@ -697,15 +640,16 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::AutomorphismTransform(uint32_t k,
     PolyImpl<NativeVector> tmp(m_params, m_format, true);
     uint32_t n = m_params->GetRingDimension();
     
-    this->copy_to_shadow();
-    tmp.copy_to_shadow();
-    
-    for (uint32_t j = 0; j < n; ++j)
-        (*tmp.m_values_shadow.m_values)[j] = (*m_values_shadow.m_values)[precomp[j]];
+    CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_AutomorphismTransform);
 
-    inc_compute_implemented();
+    item->poly = (void*)this;
+    item->poly2 = (void*)&tmp;
+    item->ptr32_1 = (uint32_t*)&precomp[0];
+    item->param1 = n;
+    work_queue.addWork(item);
     
-    tmp.indicate_modified_shadow();
+    delete item; // Clean up
+
     return tmp;
 }
 
@@ -751,42 +695,27 @@ void PolyImpl<VecType>::SwitchModulus(const Integer& modulus, const Integer& roo
 template <>
 void PolyImpl<NativeVector>::SwitchModulus(const Integer& modulus, const Integer& rootOfUnity, const Integer& modulusArb,
                                       const Integer& rootOfUnityArb) {
-    this->copy_to_shadow();
-    {        
-        auto size{m_values_shadow.m_values->size()};
-        auto halfQ{m_params->GetModulus().m_value >> 1};
-        auto om{m_params->GetModulus().m_value};
-        if (m_values != nullptr) { 
-            m_values->NativeVectorT::SetModulus(modulus);
-        }
-        auto nm{modulus.m_value};
-
-        uint64_t* data = m_values_shadow.get_ptr();
-
-        if (nm > om) {
-            auto diff{nm - om};
-            for (size_t i = 0; i < size; ++i) {
-                auto& v = data[i];
-                if (v > halfQ)
-                    v = v + diff;
-            }
-        }
-        else {
-            auto diff{nm - (om % nm)};
-            for (size_t i = 0; i < size; ++i) {
-                auto& v = data[i];
-                if (v > halfQ)
-                    v = v + diff;
-                if (v >= nm)
-                    v = v % nm;
-            }
-        }
-
-        this->indicate_modified_shadow();
-        auto c{m_params->GetCyclotomicOrder()};
-        m_params = std::make_shared<PolyImpl::Params>(c, modulus, rootOfUnity, modulusArb, rootOfUnityArb);
+    auto size{m_values_shadow.m_values->size()};
+    auto halfQ{m_params->GetModulus().m_value >> 1};
+    auto om{m_params->GetModulus().m_value};
+    if (m_values != nullptr) { 
+        m_values->NativeVectorT::SetModulus(modulus);
     }
-    inc_compute_implemented();
+    auto nm{modulus.m_value};
+
+    CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_SwitchModulus);
+
+    item->poly = (void*)this;
+    item->param1 = size;
+    item->param2 = halfQ;
+    item->param3 = om;
+    item->param4 = nm;
+    work_queue.addWork(item);
+    
+    delete item; // Clean up
+
+    auto c{m_params->GetCyclotomicOrder()};
+    m_params = std::make_shared<PolyImpl::Params>(c, modulus, rootOfUnity, modulusArb, rootOfUnityArb);
 }
 
 template <typename VecType>
@@ -832,18 +761,28 @@ void PolyImpl<NativeVector>::SwitchFormat() {
     if (m_format != Format::COEFFICIENT) {        
         m_format = Format::COEFFICIENT;
 
-        this->copy_to_shadow();
-        ChineseRemainderTransformFTT<NativeVector>().InverseTransformFromBitReverseInPlace(ru, co, m_values_shadow.get_ptr(),this->GetLength(),m_params->GetModulus().m_value);
-        this->indicate_modified_shadow();
+        CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_SwitchFormatInverseTransform);
+
+        item->poly = (void*)this;
+        item->param1 = co;
+        item->param2 = ru.ConvertToInt();
+        work_queue.addWork(item);
+        
+        delete item; // Clean up
+
         return;
     }
 
     m_format = Format::EVALUATION;
 
-    this->copy_to_shadow();
-    ChineseRemainderTransformFTT<NativeVector>().ForwardTransformToBitReverseInPlace(ru, co, m_values_shadow.get_ptr(),this->GetLength(),m_params->GetModulus().m_value);
-    this->indicate_modified_shadow();
-    inc_compute_implemented();
+    CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_SwitchFormatForwardTransform);
+
+    item->poly = (void*)this;
+    item->param1 = co;
+    item->param2 = ru.ConvertToInt();
+    work_queue.addWork(item);
+    
+    delete item; // Clean up
 }
 
 template <typename VecType>
@@ -1000,6 +939,288 @@ template <>
 inline PolyImpl<NativeVector> PolyImpl<NativeVector>::ToNativePoly() const {
     return *this;
 }
+
+
+void consumer(WorkQueue& queue) {
+    CustomTaskItem* item;
+    
+    std::cout << "consumer thread: started" << std::endl;
+
+    while (queue.getWork(item)) {
+        // Process the item
+
+        PolyImpl<NativeVector>* poly = (PolyImpl<NativeVector>*)item->poly;
+        PolyImpl<NativeVector>* poly2 = (PolyImpl<NativeVector>*)item->poly2;
+        PolyImpl<NativeVector>* poly3 = (PolyImpl<NativeVector>*)item->poly3;
+
+        switch(item->task_type) {
+            case TASK_TYPE_PlainModMulEqScalar: {
+                    poly->copy_to_shadow();
+                
+                    PlainModMulEqScalar(
+                        poly->m_values_shadow.get_ptr(),
+                        poly->m_params->GetModulus().m_value,
+                        item->param1, //element.m_value,
+                        poly->m_values_shadow.m_values->size()
+                    );    
+
+                    poly->indicate_modified_shadow();
+            
+                    inc_compute_implemented();  
+                }
+                break;
+            case TASK_TYPE_PlusScalar: {
+                    poly2->create_shadow();
+                    poly->copy_to_shadow();
+                    
+                    uint64_t* op1       = poly->m_values_shadow.get_ptr();
+                    uint64_t* result    = poly2->m_values_shadow.get_ptr();
+                    uint64_t modulus    = poly->m_params->GetModulus().m_value;
+
+                    for(size_t i=0; i<poly->m_values_shadow.m_values->size(); i++){
+                        uint64_t x = op1[i];
+                        x += item->param1;
+                        result[i] = x >= modulus ? x - modulus : x;
+                    }
+
+                    poly2->indicate_modified_shadow();
+                    
+                    inc_compute_implemented();
+                }
+                break;
+            case TASK_TYPE_MinusScalar: {
+                    poly2->create_shadow();
+                    poly->copy_to_shadow();
+                    
+                    uint64_t* op1       = poly->m_values_shadow.get_ptr();
+                    uint64_t* result    = poly2->m_values_shadow.get_ptr();
+                    uint64_t modulus    = poly->m_params->GetModulus().m_value;
+
+                    for(size_t i=0; i<poly->m_values_shadow.m_values->size(); i++){
+                        uint64_t x = op1[i];
+                        unsigned long long temp = x - item->param1;
+                        std::int64_t borrow = (temp > x);
+                        result[i] = static_cast<std::uint64_t>(temp) + (modulus & static_cast<std::uint64_t>(-borrow));
+                    }
+
+                    poly2->indicate_modified_shadow();
+                    
+                    inc_compute_implemented();
+                }
+                break;
+            case TASK_TYPE_PlainModMulScalar:   {
+                    poly2->create_shadow();
+                    poly->copy_to_shadow();
+
+                    PlainModMulScalar(
+                        poly2->m_values_shadow.get_ptr(),
+                        poly->m_values_shadow.get_ptr(),
+                        poly->m_params->GetModulus().m_value,
+                        item->param1,
+                        poly->m_values_shadow.m_values->size()
+                    );
+                    
+                    poly2->indicate_modified_shadow();
+                    inc_compute_implemented();
+                }
+                break;
+            case TASK_TYPE_Minus: {
+                    poly2->create_shadow();
+                    poly->copy_to_shadow(); 
+                    poly3->copy_to_shadow(); 
+
+                    uint64_t* op1       = poly->m_values_shadow.get_ptr();
+                    uint64_t* op2       = poly3->m_values_shadow.get_ptr();
+                    uint64_t* result    = poly2->m_values_shadow.get_ptr();
+                    uint64_t modulus    = poly->m_params->GetModulus().m_value;
+
+                    for(size_t i=0; i<poly->m_values_shadow.m_values->size(); i++){
+                        uint64_t x = op1[i];
+                        unsigned long long temp = x - op2[i];
+                        std::int64_t borrow = (temp > x);
+                        result[i] = static_cast<std::uint64_t>(temp) + (modulus & static_cast<std::uint64_t>(-borrow));
+                    }
+
+                    poly2->indicate_modified_shadow();
+                    inc_compute_implemented();                
+                }   
+                break;
+            case TASK_TYPE_PlusInPlace: {
+                    poly->copy_to_shadow();
+                    poly2->copy_to_shadow();
+
+                    uint64_t* op1       = poly->m_values_shadow.get_ptr();
+                    const uint64_t* op2 = poly2->m_values_shadow.get_ptr();
+                    
+                    uint64_t modulus = poly->m_params->GetModulus().m_value;
+
+                    for(size_t i=0; i<poly->m_values_shadow.m_values->size(); i++){
+                        uint64_t sum = op1[i] + op2[i];
+                        op1[i] = sum >= modulus ? sum - modulus : sum;
+                    }
+
+                    // m_values->ModAddEq(*element.m_values);
+                    
+                    poly->indicate_modified_shadow();
+
+                    inc_compute_implemented(); 
+                }
+                break;
+            case TASK_TYPE_MinusInPlace: {
+                    poly->copy_to_shadow();
+                    poly2->copy_to_shadow();
+
+                    uint64_t* op1       = poly->m_values_shadow.get_ptr();
+                    const uint64_t* op2 = poly2->m_values_shadow.get_ptr();
+                    uint64_t modulus = poly->m_params->GetModulus().m_value;
+
+                    // m_values->ModSubEq(*element.m_values); // replace
+                    unsigned long long temp_result;
+                    for(size_t i=0; i<poly->m_values_shadow.m_values->size(); i++){
+                        temp_result = op1[i] - op2[i];
+                        std::int64_t borrow = static_cast<unsigned char>(op2[i] > op1[i]);
+                        op1[i] = temp_result + (modulus & static_cast<std::uint64_t>(-borrow));
+                    }
+
+                    poly->indicate_modified_shadow();
+
+                    inc_compute_implemented();
+                }
+                break;
+            case TASK_TYPE_AutomorphismTransform: {
+                    poly->copy_to_shadow();
+                    poly2->copy_to_shadow();
+                    
+                    for (uint32_t j = 0; j < item->param1; ++j)
+                        (*poly2->m_values_shadow.m_values)[j] = (*poly->m_values_shadow.m_values)[item->ptr32_1[j]];
+
+                    inc_compute_implemented();
+                    
+                    poly2->indicate_modified_shadow();
+                }
+                break;
+            case TASK_TYPE_SwitchModulus: {
+                    poly->copy_to_shadow();
+
+                    uint64_t* data = poly->m_values_shadow.get_ptr();
+
+                    uint64_t size = item->param1;
+                    uint64_t halfQ = item->param2;
+                    uint64_t om = item->param3;
+                    uint64_t nm = item->param4;
+
+
+                    if (nm > om) {
+                        auto diff{nm - om};
+                        for (size_t i = 0; i < size; ++i) {
+                            auto& v = data[i];
+                            if (v > halfQ)
+                                v = v + diff;
+                        }
+                    }
+                    else {
+                        auto diff{nm - (om % nm)};
+                        for (size_t i = 0; i < size; ++i) {
+                            auto& v = data[i];
+                            if (v > halfQ)
+                                v = v + diff;
+                            if (v >= nm)
+                                v = v % nm;
+                        }
+                    }
+
+                    poly->indicate_modified_shadow();
+
+                    inc_compute_implemented();
+                }
+                break;
+            case TASK_TYPE_SwitchFormatInverseTransform: {
+                    uint64_t co = item->param1;
+                    uint64_t ru = item->param2;
+
+                    poly->copy_to_shadow();
+                    ChineseRemainderTransformFTT<NativeVector>().InverseTransformFromBitReverseInPlace(NativeInteger::Integer(ru), co, poly->m_values_shadow.get_ptr(),poly->GetLength(),poly->m_params->GetModulus().m_value);
+                    poly->indicate_modified_shadow();
+                    inc_compute_implemented();
+                }
+                break;
+            case TASK_TYPE_SwitchFormatForwardTransform: {
+                    uint64_t co = item->param1;
+                    uint64_t ru = item->param2;
+
+                    poly->copy_to_shadow();
+                    ChineseRemainderTransformFTT<NativeVector>().ForwardTransformToBitReverseInPlace(NativeInteger::Integer(ru), co, poly->m_values_shadow.get_ptr(),poly->GetLength(),poly->m_params->GetModulus().m_value);
+                    poly->indicate_modified_shadow();
+                    inc_compute_implemented();
+                }
+                break;
+            case TASK_TYPE_Plus: {
+                    poly2->copy_to_shadow();
+                    poly3->copy_to_shadow();
+
+                    uint64_t* op1       = poly2->m_values_shadow.get_ptr();
+                    const uint64_t* op2 = poly3->m_values_shadow.get_ptr();
+
+                    uint64_t modulus = poly->m_params->GetModulus().ConvertToInt();
+
+                    for(size_t i=0; i<poly2->m_values_shadow.m_values->size(); i++){
+                        uint64_t sum = op1[i] + op2[i];
+                        op1[i] = sum >= modulus ? sum - modulus : sum;
+                    }
+
+                    poly2->indicate_modified_shadow();
+                    inc_compute_implemented();
+                }
+                break;
+            case TASK_TYPE_Times: {
+                    poly2->copy_to_shadow();
+                    poly3->copy_to_shadow();
+
+                    uint64_t* op1 = poly2->m_values_shadow.get_ptr();
+                    const uint64_t* op2 = poly3->m_values_shadow.get_ptr();
+
+                    PlainModMul(
+                        op1,
+                        op2,
+                        poly->m_params->GetModulus().ConvertToInt(),
+                        poly3->m_values_shadow.m_values->size()
+                    );
+                    
+                    poly2->indicate_modified_shadow();
+                    inc_compute_implemented();                    
+                }
+                break;
+            case TASK_TYPE_TimesInPlace: {
+                    poly->copy_to_shadow();
+                    poly2->copy_to_shadow();
+
+                    uint64_t* op1 = poly->m_values_shadow.get_ptr();
+                    const uint64_t* op2 = poly2->m_values_shadow.get_ptr();
+
+                    PlainModMul(
+                        op1,
+                        op2,
+                        poly->m_params->GetModulus().ConvertToInt(),
+                        poly2->m_values_shadow.m_values->size()
+                    );
+                    
+                    poly->indicate_modified_shadow();
+                    inc_compute_implemented();
+                }
+                break;
+            default:
+                break;
+        }
+
+        // std::cout << "Processed: " << item->task_type << std::endl;
+
+        // Mark as processed and notify the producer
+        queue.workProcessed(item);
+    }
+
+    std::cout << "consumer thread: queue.getWork returned False" << std::endl;
+}
+
 
 }  // namespace lbcrypto
 
