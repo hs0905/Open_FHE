@@ -139,7 +139,7 @@ public:
     DCRTPolyType& operator-=(const NativeInteger& rhs) override;
     DCRTPolyType& operator*=(const DCRTPolyType& rhs) override {
         size_t size{m_vectors.size()};
-#pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(size))
+// #pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(size))
         for (size_t i = 0; i < size; ++i)
             m_vectors[i] *= rhs.m_vectors[i];
         return *this;
@@ -170,7 +170,7 @@ public:
         if (m_vectors[0].GetModulus() != rhs.m_vectors[0].GetModulus())
             OPENFHE_THROW(math_error, "Modulus missmatch");
         DCRTPolyType tmp(m_params, m_format);
-#pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(size))
+// #pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(size))
         for (size_t i = 0; i < size; ++i)
             tmp.m_vectors[i] = m_vectors[i].PlusNoCheck(rhs.m_vectors[i]);
         return tmp;
@@ -191,7 +191,7 @@ public:
         if (m_vectors[0].GetModulus() != rhs.m_vectors[0].GetModulus())
             OPENFHE_THROW(math_error, "Modulus missmatch");
         DCRTPolyType tmp(m_params, m_format);
-#pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(size))
+// #pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(size))
         for (size_t i = 0; i < size; ++i)
             tmp.m_vectors[i] = m_vectors[i].TimesNoCheck(rhs.m_vectors[i]);
         return tmp;

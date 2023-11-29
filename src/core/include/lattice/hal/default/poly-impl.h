@@ -766,6 +766,7 @@ void PolyImpl<NativeVector>::SwitchFormat() {
         item->poly = (void*)this;
         item->param1 = co;
         item->param2 = ru.ConvertToInt();
+        item->param3 = m_params->GetModulus().m_value;
         work_queue.addWork(item);
         
         delete item; // Clean up
@@ -780,6 +781,7 @@ void PolyImpl<NativeVector>::SwitchFormat() {
     item->poly = (void*)this;
     item->param1 = co;
     item->param2 = ru.ConvertToInt();
+    item->param3 = m_params->GetModulus().m_value;
     work_queue.addWork(item);
     
     delete item; // Clean up
@@ -940,285 +942,320 @@ inline PolyImpl<NativeVector> PolyImpl<NativeVector>::ToNativePoly() const {
     return *this;
 }
 
+#include <chrono>
 
 void consumer(WorkQueue& queue) {
-    CustomTaskItem* item;
+    std::vector<CustomTaskItem*> items;
     
     std::cout << "consumer thread: started" << std::endl;
+    
+    auto start = std::chrono::high_resolution_clock::now();
+    
+    std::chrono::duration<double, std::milli> elapsed_getwork(0.0);
+    std::chrono::duration<double, std::milli> elapsed_work(0.0);
 
-    while (queue.getWork(item)) {
-        // Process the item
+    bool success = queue.getWork(items) ;
+    
+    while(success)    
+    {
+        auto start_work = std::chrono::high_resolution_clock::now();    
 
-        PolyImpl<NativeVector>* poly = (PolyImpl<NativeVector>*)item->poly;
-        PolyImpl<NativeVector>* poly2 = (PolyImpl<NativeVector>*)item->poly2;
-        PolyImpl<NativeVector>* poly3 = (PolyImpl<NativeVector>*)item->poly3;
+        for(auto item:items)
+        {
+            // Process the item
 
-        switch(item->task_type) {
-            case TASK_TYPE_PlainModMulEqScalar: {
-                    poly->copy_to_shadow();
+            PolyImpl<NativeVector>* poly = (PolyImpl<NativeVector>*)item->poly;
+            PolyImpl<NativeVector>* poly2 = (PolyImpl<NativeVector>*)item->poly2;
+            PolyImpl<NativeVector>* poly3 = (PolyImpl<NativeVector>*)item->poly3;
+
+            switch(item->task_type) {
+                case TASK_TYPE_PlainModMulEqScalar: {
+                        poly->copy_to_shadow();
+                    
+                        PlainModMulEqScalar(
+                            poly->m_values_shadow.get_ptr(),
+                            poly->m_params->GetModulus().m_value,
+                            item->param1, //element.m_value,
+                            poly->m_values_shadow.m_values->size()
+                        );    
+
+                        poly->indicate_modified_shadow();
                 
-                    PlainModMulEqScalar(
-                        poly->m_values_shadow.get_ptr(),
-                        poly->m_params->GetModulus().m_value,
-                        item->param1, //element.m_value,
-                        poly->m_values_shadow.m_values->size()
-                    );    
-
-                    poly->indicate_modified_shadow();
-            
-                    inc_compute_implemented();  
-                }
-                break;
-            case TASK_TYPE_PlusScalar: {
-                    poly2->create_shadow();
-                    poly->copy_to_shadow();
-                    
-                    uint64_t* op1       = poly->m_values_shadow.get_ptr();
-                    uint64_t* result    = poly2->m_values_shadow.get_ptr();
-                    uint64_t modulus    = poly->m_params->GetModulus().m_value;
-
-                    for(size_t i=0; i<poly->m_values_shadow.m_values->size(); i++){
-                        uint64_t x = op1[i];
-                        x += item->param1;
-                        result[i] = x >= modulus ? x - modulus : x;
+                        inc_compute_implemented();  
                     }
+                    break;
+                case TASK_TYPE_PlusScalar: {
+                        poly2->create_shadow();
+                        poly->copy_to_shadow();
+                        
+                        uint64_t* op1       = poly->m_values_shadow.get_ptr();
+                        uint64_t* result    = poly2->m_values_shadow.get_ptr();
+                        uint64_t modulus    = poly->m_params->GetModulus().m_value;
 
-                    poly2->indicate_modified_shadow();
-                    
-                    inc_compute_implemented();
-                }
-                break;
-            case TASK_TYPE_MinusScalar: {
-                    poly2->create_shadow();
-                    poly->copy_to_shadow();
-                    
-                    uint64_t* op1       = poly->m_values_shadow.get_ptr();
-                    uint64_t* result    = poly2->m_values_shadow.get_ptr();
-                    uint64_t modulus    = poly->m_params->GetModulus().m_value;
-
-                    for(size_t i=0; i<poly->m_values_shadow.m_values->size(); i++){
-                        uint64_t x = op1[i];
-                        unsigned long long temp = x - item->param1;
-                        std::int64_t borrow = (temp > x);
-                        result[i] = static_cast<std::uint64_t>(temp) + (modulus & static_cast<std::uint64_t>(-borrow));
-                    }
-
-                    poly2->indicate_modified_shadow();
-                    
-                    inc_compute_implemented();
-                }
-                break;
-            case TASK_TYPE_PlainModMulScalar:   {
-                    poly2->create_shadow();
-                    poly->copy_to_shadow();
-
-                    PlainModMulScalar(
-                        poly2->m_values_shadow.get_ptr(),
-                        poly->m_values_shadow.get_ptr(),
-                        poly->m_params->GetModulus().m_value,
-                        item->param1,
-                        poly->m_values_shadow.m_values->size()
-                    );
-                    
-                    poly2->indicate_modified_shadow();
-                    inc_compute_implemented();
-                }
-                break;
-            case TASK_TYPE_Minus: {
-                    poly2->create_shadow();
-                    poly->copy_to_shadow(); 
-                    poly3->copy_to_shadow(); 
-
-                    uint64_t* op1       = poly->m_values_shadow.get_ptr();
-                    uint64_t* op2       = poly3->m_values_shadow.get_ptr();
-                    uint64_t* result    = poly2->m_values_shadow.get_ptr();
-                    uint64_t modulus    = poly->m_params->GetModulus().m_value;
-
-                    for(size_t i=0; i<poly->m_values_shadow.m_values->size(); i++){
-                        uint64_t x = op1[i];
-                        unsigned long long temp = x - op2[i];
-                        std::int64_t borrow = (temp > x);
-                        result[i] = static_cast<std::uint64_t>(temp) + (modulus & static_cast<std::uint64_t>(-borrow));
-                    }
-
-                    poly2->indicate_modified_shadow();
-                    inc_compute_implemented();                
-                }   
-                break;
-            case TASK_TYPE_PlusInPlace: {
-                    poly->copy_to_shadow();
-                    poly2->copy_to_shadow();
-
-                    uint64_t* op1       = poly->m_values_shadow.get_ptr();
-                    const uint64_t* op2 = poly2->m_values_shadow.get_ptr();
-                    
-                    uint64_t modulus = poly->m_params->GetModulus().m_value;
-
-                    for(size_t i=0; i<poly->m_values_shadow.m_values->size(); i++){
-                        uint64_t sum = op1[i] + op2[i];
-                        op1[i] = sum >= modulus ? sum - modulus : sum;
-                    }
-
-                    // m_values->ModAddEq(*element.m_values);
-                    
-                    poly->indicate_modified_shadow();
-
-                    inc_compute_implemented(); 
-                }
-                break;
-            case TASK_TYPE_MinusInPlace: {
-                    poly->copy_to_shadow();
-                    poly2->copy_to_shadow();
-
-                    uint64_t* op1       = poly->m_values_shadow.get_ptr();
-                    const uint64_t* op2 = poly2->m_values_shadow.get_ptr();
-                    uint64_t modulus = poly->m_params->GetModulus().m_value;
-
-                    // m_values->ModSubEq(*element.m_values); // replace
-                    unsigned long long temp_result;
-                    for(size_t i=0; i<poly->m_values_shadow.m_values->size(); i++){
-                        temp_result = op1[i] - op2[i];
-                        std::int64_t borrow = static_cast<unsigned char>(op2[i] > op1[i]);
-                        op1[i] = temp_result + (modulus & static_cast<std::uint64_t>(-borrow));
-                    }
-
-                    poly->indicate_modified_shadow();
-
-                    inc_compute_implemented();
-                }
-                break;
-            case TASK_TYPE_AutomorphismTransform: {
-                    poly->copy_to_shadow();
-                    poly2->copy_to_shadow();
-                    
-                    for (uint32_t j = 0; j < item->param1; ++j)
-                        (*poly2->m_values_shadow.m_values)[j] = (*poly->m_values_shadow.m_values)[item->ptr32_1[j]];
-
-                    inc_compute_implemented();
-                    
-                    poly2->indicate_modified_shadow();
-                }
-                break;
-            case TASK_TYPE_SwitchModulus: {
-                    poly->copy_to_shadow();
-
-                    uint64_t* data = poly->m_values_shadow.get_ptr();
-
-                    uint64_t size = item->param1;
-                    uint64_t halfQ = item->param2;
-                    uint64_t om = item->param3;
-                    uint64_t nm = item->param4;
-
-
-                    if (nm > om) {
-                        auto diff{nm - om};
-                        for (size_t i = 0; i < size; ++i) {
-                            auto& v = data[i];
-                            if (v > halfQ)
-                                v = v + diff;
+                        for(size_t i=0; i<poly->m_values_shadow.m_values->size(); i++){
+                            uint64_t x = op1[i];
+                            x += item->param1;
+                            result[i] = x >= modulus ? x - modulus : x;
                         }
+
+                        poly2->indicate_modified_shadow();
+                        
+                        inc_compute_implemented();
                     }
-                    else {
-                        auto diff{nm - (om % nm)};
-                        for (size_t i = 0; i < size; ++i) {
-                            auto& v = data[i];
-                            if (v > halfQ)
-                                v = v + diff;
-                            if (v >= nm)
-                                v = v % nm;
+                    break;
+                case TASK_TYPE_MinusScalar: {
+                        poly2->create_shadow();
+                        poly->copy_to_shadow();
+                        
+                        uint64_t* op1       = poly->m_values_shadow.get_ptr();
+                        uint64_t* result    = poly2->m_values_shadow.get_ptr();
+                        uint64_t modulus    = poly->m_params->GetModulus().m_value;
+
+                        for(size_t i=0; i<poly->m_values_shadow.m_values->size(); i++){
+                            uint64_t x = op1[i];
+                            unsigned long long temp = x - item->param1;
+                            std::int64_t borrow = (temp > x);
+                            result[i] = static_cast<std::uint64_t>(temp) + (modulus & static_cast<std::uint64_t>(-borrow));
                         }
+
+                        poly2->indicate_modified_shadow();
+                        
+                        inc_compute_implemented();
                     }
+                    break;
+                case TASK_TYPE_PlainModMulScalar:   {
+                        poly2->create_shadow();
+                        poly->copy_to_shadow();
 
-                    poly->indicate_modified_shadow();
-
-                    inc_compute_implemented();
-                }
-                break;
-            case TASK_TYPE_SwitchFormatInverseTransform: {
-                    uint64_t co = item->param1;
-                    uint64_t ru = item->param2;
-
-                    poly->copy_to_shadow();
-                    ChineseRemainderTransformFTT<NativeVector>().InverseTransformFromBitReverseInPlace(NativeInteger::Integer(ru), co, poly->m_values_shadow.get_ptr(),poly->GetLength(),poly->m_params->GetModulus().m_value);
-                    poly->indicate_modified_shadow();
-                    inc_compute_implemented();
-                }
-                break;
-            case TASK_TYPE_SwitchFormatForwardTransform: {
-                    uint64_t co = item->param1;
-                    uint64_t ru = item->param2;
-
-                    poly->copy_to_shadow();
-                    ChineseRemainderTransformFTT<NativeVector>().ForwardTransformToBitReverseInPlace(NativeInteger::Integer(ru), co, poly->m_values_shadow.get_ptr(),poly->GetLength(),poly->m_params->GetModulus().m_value);
-                    poly->indicate_modified_shadow();
-                    inc_compute_implemented();
-                }
-                break;
-            case TASK_TYPE_Plus: {
-                    poly2->copy_to_shadow();
-                    poly3->copy_to_shadow();
-
-                    uint64_t* op1       = poly2->m_values_shadow.get_ptr();
-                    const uint64_t* op2 = poly3->m_values_shadow.get_ptr();
-
-                    uint64_t modulus = poly->m_params->GetModulus().ConvertToInt();
-
-                    for(size_t i=0; i<poly2->m_values_shadow.m_values->size(); i++){
-                        uint64_t sum = op1[i] + op2[i];
-                        op1[i] = sum >= modulus ? sum - modulus : sum;
+                        PlainModMulScalar(
+                            poly2->m_values_shadow.get_ptr(),
+                            poly->m_values_shadow.get_ptr(),
+                            poly->m_params->GetModulus().m_value,
+                            item->param1,
+                            poly->m_values_shadow.m_values->size()
+                        );
+                        
+                        poly2->indicate_modified_shadow();
+                        inc_compute_implemented();
                     }
+                    break;
+                case TASK_TYPE_Minus: {
+                        poly2->create_shadow();
+                        poly->copy_to_shadow(); 
+                        poly3->copy_to_shadow(); 
 
-                    poly2->indicate_modified_shadow();
-                    inc_compute_implemented();
-                }
-                break;
-            case TASK_TYPE_Times: {
-                    poly2->copy_to_shadow();
-                    poly3->copy_to_shadow();
+                        uint64_t* op1       = poly->m_values_shadow.get_ptr();
+                        uint64_t* op2       = poly3->m_values_shadow.get_ptr();
+                        uint64_t* result    = poly2->m_values_shadow.get_ptr();
+                        uint64_t modulus    = poly->m_params->GetModulus().m_value;
 
-                    uint64_t* op1 = poly2->m_values_shadow.get_ptr();
-                    const uint64_t* op2 = poly3->m_values_shadow.get_ptr();
+                        for(size_t i=0; i<poly->m_values_shadow.m_values->size(); i++){
+                            uint64_t x = op1[i];
+                            unsigned long long temp = x - op2[i];
+                            std::int64_t borrow = (temp > x);
+                            result[i] = static_cast<std::uint64_t>(temp) + (modulus & static_cast<std::uint64_t>(-borrow));
+                        }
 
-                    PlainModMul(
-                        op1,
-                        op2,
-                        poly->m_params->GetModulus().ConvertToInt(),
-                        poly3->m_values_shadow.m_values->size()
-                    );
-                    
-                    poly2->indicate_modified_shadow();
-                    inc_compute_implemented();                    
-                }
-                break;
-            case TASK_TYPE_TimesInPlace: {
-                    poly->copy_to_shadow();
-                    poly2->copy_to_shadow();
+                        poly2->indicate_modified_shadow();
+                        inc_compute_implemented();                
+                    }   
+                    break;
+                case TASK_TYPE_PlusInPlace: {
+                        poly->copy_to_shadow();
+                        poly2->copy_to_shadow();
 
-                    uint64_t* op1 = poly->m_values_shadow.get_ptr();
-                    const uint64_t* op2 = poly2->m_values_shadow.get_ptr();
+                        uint64_t* op1       = poly->m_values_shadow.get_ptr();
+                        const uint64_t* op2 = poly2->m_values_shadow.get_ptr();
+                        
+                        uint64_t modulus = poly->m_params->GetModulus().m_value;
 
-                    PlainModMul(
-                        op1,
-                        op2,
-                        poly->m_params->GetModulus().ConvertToInt(),
-                        poly2->m_values_shadow.m_values->size()
-                    );
-                    
-                    poly->indicate_modified_shadow();
-                    inc_compute_implemented();
-                }
-                break;
-            default:
-                break;
+                        for(size_t i=0; i<poly->m_values_shadow.m_values->size(); i++){
+                            uint64_t sum = op1[i] + op2[i];
+                            op1[i] = sum >= modulus ? sum - modulus : sum;
+                        }
+
+                        // m_values->ModAddEq(*element.m_values);
+                        
+                        poly->indicate_modified_shadow();
+
+                        inc_compute_implemented(); 
+                    }
+                    break;
+                case TASK_TYPE_MinusInPlace: {
+                        poly->copy_to_shadow();
+                        poly2->copy_to_shadow();
+
+                        uint64_t* op1       = poly->m_values_shadow.get_ptr();
+                        const uint64_t* op2 = poly2->m_values_shadow.get_ptr();
+                        uint64_t modulus = poly->m_params->GetModulus().m_value;
+
+                        // m_values->ModSubEq(*element.m_values); // replace
+                        unsigned long long temp_result;
+                        for(size_t i=0; i<poly->m_values_shadow.m_values->size(); i++){
+                            temp_result = op1[i] - op2[i];
+                            std::int64_t borrow = static_cast<unsigned char>(op2[i] > op1[i]);
+                            op1[i] = temp_result + (modulus & static_cast<std::uint64_t>(-borrow));
+                        }
+
+                        poly->indicate_modified_shadow();
+
+                        inc_compute_implemented();
+                    }
+                    break;
+                case TASK_TYPE_AutomorphismTransform: {
+                        poly->copy_to_shadow();
+                        poly2->copy_to_shadow();
+                        
+                        for (uint32_t j = 0; j < item->param1; ++j)
+                            (*poly2->m_values_shadow.m_values)[j] = (*poly->m_values_shadow.m_values)[item->ptr32_1[j]];
+
+                        inc_compute_implemented();
+                        
+                        poly2->indicate_modified_shadow();
+                    }
+                    break;
+                case TASK_TYPE_SwitchModulus: {
+                        poly->copy_to_shadow();
+
+                        uint64_t* data = poly->m_values_shadow.get_ptr();
+
+                        uint64_t size = item->param1;
+                        uint64_t halfQ = item->param2;
+                        uint64_t om = item->param3;
+                        uint64_t nm = item->param4;
+
+
+                        if (nm > om) {
+                            auto diff{nm - om};
+                            for (size_t i = 0; i < size; ++i) {
+                                auto& v = data[i];
+                                if (v > halfQ)
+                                    v = v + diff;
+                            }
+                        }
+                        else {
+                            auto diff{nm - (om % nm)};
+                            for (size_t i = 0; i < size; ++i) {
+                                auto& v = data[i];
+                                if (v > halfQ)
+                                    v = v + diff;
+                                if (v >= nm)
+                                    v = v % nm;
+                            }
+                        }
+
+                        poly->indicate_modified_shadow();
+
+                        inc_compute_implemented();
+                    }
+                    break;
+                case TASK_TYPE_SwitchFormatInverseTransform: {
+                        uint64_t co = item->param1;
+                        uint64_t ru = item->param2;
+                        uint64_t modulus = item->param3;
+
+                        poly->copy_to_shadow();
+                        ChineseRemainderTransformFTT<NativeVector>().InverseTransformFromBitReverseInPlace(NativeInteger::Integer(ru), co, poly->m_values_shadow.get_ptr(),poly->GetLength(),modulus);
+                        poly->indicate_modified_shadow();
+                        inc_compute_implemented();
+                    }
+                    break;
+                case TASK_TYPE_SwitchFormatForwardTransform: {
+                        uint64_t co = item->param1;
+                        uint64_t ru = item->param2;
+                        uint64_t modulus = item->param3;
+
+                        poly->copy_to_shadow();
+                        ChineseRemainderTransformFTT<NativeVector>().ForwardTransformToBitReverseInPlace(NativeInteger::Integer(ru), co, poly->m_values_shadow.get_ptr(),poly->GetLength(),modulus);
+                        poly->indicate_modified_shadow();
+                        inc_compute_implemented();
+                    }
+                    break;
+                case TASK_TYPE_Plus: {
+                        poly2->copy_to_shadow();
+                        poly3->copy_to_shadow();
+
+                        uint64_t* op1       = poly2->m_values_shadow.get_ptr();
+                        const uint64_t* op2 = poly3->m_values_shadow.get_ptr();
+
+                        uint64_t modulus = poly->m_params->GetModulus().ConvertToInt();
+
+                        for(size_t i=0; i<poly2->m_values_shadow.m_values->size(); i++){
+                            uint64_t sum = op1[i] + op2[i];
+                            op1[i] = sum >= modulus ? sum - modulus : sum;
+                        }
+
+                        poly2->indicate_modified_shadow();
+                        inc_compute_implemented();
+                    }
+                    break;
+                case TASK_TYPE_Times: 
+                case TASK_TYPE_TimesNoCheck: {
+                        poly2->copy_to_shadow();
+                        poly3->copy_to_shadow();
+
+                        uint64_t* op1 = poly2->m_values_shadow.get_ptr();
+                        const uint64_t* op2 = poly3->m_values_shadow.get_ptr();
+
+                        PlainModMul(
+                            op1,
+                            op2,
+                            poly->m_params->GetModulus().ConvertToInt(),
+                            poly3->m_values_shadow.m_values->size()
+                        );
+                        
+                        poly2->indicate_modified_shadow();
+                        inc_compute_implemented();                    
+                    }
+                    break;
+                case TASK_TYPE_TimesInPlace: {
+                        poly->copy_to_shadow();
+                        poly2->copy_to_shadow();
+
+                        uint64_t* op1 = poly->m_values_shadow.get_ptr();
+                        const uint64_t* op2 = poly2->m_values_shadow.get_ptr();
+
+                        PlainModMul(
+                            op1,
+                            op2,
+                            poly->m_params->GetModulus().ConvertToInt(),
+                            poly2->m_values_shadow.m_values->size()
+                        );
+                        
+                        poly->indicate_modified_shadow();
+                        inc_compute_implemented();
+                    }
+                    break;
+                default:
+                    break;
+            }
+
+            // std::cout << "Processed: " << item->task_type << std::endl;
+
+            // Mark as processed and notify the producer
+            queue.workProcessed(item);
         }
 
-        // std::cout << "Processed: " << item->task_type << std::endl;
+        auto end_work = std::chrono::high_resolution_clock::now();
+        elapsed_work += end_work - start_work;        
 
-        // Mark as processed and notify the producer
-        queue.workProcessed(item);
+        auto start_getwork = std::chrono::high_resolution_clock::now();
+        items.clear();
+        success = queue.getWork(items) ;        
+        auto end_getwork = std::chrono::high_resolution_clock::now();
+        elapsed_getwork += end_getwork - start_getwork;
+        if(!success) break;
     }
 
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> elapsed = end - start;
+    
     std::cout << "consumer thread: queue.getWork returned False" << std::endl;
+
+    std::cout << "Elapsed time: " << elapsed.count() << " ms\n";
+    std::cout << "Elapsed time (getwork): " << elapsed_getwork.count() << " ms\n";
+    std::cout << "Elapsed time (work): " << elapsed_work.count() << " ms\n";
+    
 }
 
 

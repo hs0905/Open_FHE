@@ -81,6 +81,10 @@ void print_stat() {
 
 }
 
+void set_num_prallel_jobs(uint32_t num_parallel) {
+    work_queue.setNumParallelJobs(num_parallel);
+}
+
 void inc_copy_from_shadow() {
     cnt_copy_from_shadow++;
 }

@@ -430,7 +430,7 @@ public:
     PolyImpl TimesNoCheck(const PolyImpl& rhs) const {
         auto tmp(*this);
 
-        CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_Times);
+        CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_TimesNoCheck);
 
         item->poly = (void*)this;
         item->poly2 = (void*)&tmp;
