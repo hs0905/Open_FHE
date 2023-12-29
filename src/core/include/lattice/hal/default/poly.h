@@ -52,18 +52,37 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <tuple>
+
+#include "utils/memory_tracking.h"
 
 void inc_copy_from_shadow();
-void inc_copy_from_shadow_real();
+void inc_copy_from_shadow_ocb_real();
+void inc_copy_from_shadow_hbm_real();
 void inc_copy_to_shadow();
 void inc_copy_to_shadow_real();
 void inc_copy_from_other_shadow();
+void inc_copy_from_other_shadow1();
+void inc_copy_from_other_shadow2();
+void inc_copy_from_other_shadow3();
+void inc_copy_from_other_shadow4();
 void inc_create_shadow();
+void inc_discard_shadow();
 void inc_compute_implemented();
 void inc_compute_not_implemented();
+bool check_full_ocb_entries();
+bool check_full_hbm_entries();
+void insert_shadow_tracking_array(uint64_t m_values_addr, uint64_t m_values_shadow_addr, bool &ongoing_flag);
+void insert_shadow_hbm_tracking_array(uint64_t m_values_addr, uint64_t m_values_shadow_addr);
+std::tuple<uint64_t,uint64_t,bool*> evict_shadow_tracking_array();
+std::tuple<uint64_t,uint64_t> evict_shadow_hbm_tracking_array();
+std::tuple<uint64_t,uint64_t,bool*> select_shadow_tracking_array(uint64_t m_values_shadow_addr);
+std::tuple<uint64_t,uint64_t> select_shadow_hbm_tracking_array(uint64_t m_values_shadow_addr);
+void clean_shadow_tracking_array(uint64_t m_values_shadow_addr);
 
 #include "utils/custom_task.h"
 extern WorkQueue work_queue;
+extern std::mutex ocb_entries_m;
 
 extern void PlainModMul(uint64_t* op1, const uint64_t* op2, uint64_t modulus, size_t size);
 
@@ -74,6 +93,9 @@ namespace lbcrypto {
 #define SHADOW_IS_AHEAD 2
 #define SHADOW_IS_BEHIND 3
 
+#define SHADOW_ON_OCB 1
+#define SHADOW_ON_HBM 2
+
 /**
  * @class PolyImpl
  * @file poly.h
@@ -82,9 +104,13 @@ namespace lbcrypto {
 template <typename VecType>
 class ShadowType {
     public:
-        mutable std::shared_ptr<std::vector<uint64_t>> m_values{nullptr};   
+        mutable std::shared_ptr<std::vector<uint64_t>> m_values{nullptr};
+        mutable std::shared_ptr<std::vector<uint64_t>> m_values_hbm{nullptr};
         mutable usint shadow_sync_state{SHADOW_NOTEXIST};  
-        uint64_t* get_ptr() {return &(*m_values)[0];}  
+        mutable usint shadow_location{SHADOW_NOTEXIST};
+        mutable bool ongoing_flag{false};
+        uint64_t* get_ptr() {return &(*m_values)[0];}
+        uint64_t* get_hbm_ptr() {return &(*m_values_hbm)[0];}
 }; 
 
 template <typename VecType>
@@ -104,6 +130,10 @@ public:
 
     constexpr PolyImpl() = default;
 
+    ~PolyImpl() noexcept{
+        clean_shadow_tracking_array((uint64_t)&m_values_shadow);
+    }
+
     void copy_from_shadow() const {
         inc_copy_from_shadow();
         if(m_values == nullptr) {
@@ -111,28 +141,72 @@ public:
             m_values = std::make_unique<VecType>(r, m_params->GetModulus());
         }
 
-        if(m_values_shadow.shadow_sync_state == SHADOW_IS_AHEAD) {
-            inc_copy_from_shadow_real();
+        if(m_values_shadow.shadow_location==SHADOW_ON_OCB && m_values_shadow.shadow_sync_state == SHADOW_IS_AHEAD) {
+            inc_copy_from_shadow_ocb_real();
             ::memcpy((char*)&m_values->m_data[0],m_values_shadow.get_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
             m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
+        }
+
+        if(m_values_shadow.shadow_location==SHADOW_ON_HBM && m_values_shadow.shadow_sync_state == SHADOW_IS_AHEAD) {
+            inc_copy_from_shadow_hbm_real();
+            ::memcpy((char*)&m_values->m_data[0],m_values_shadow.get_hbm_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
+            m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
+        }
+    }
+
+    void copy_from_shadow_for_discard(std::unique_ptr<VecType>& tmp_m_values ,ShadowType<VecType>& tmp_m_values_shadow) const {
+        if(tmp_m_values_shadow.m_values == nullptr){
+            return;
+        }
+        else{
+            if(tmp_m_values == nullptr) {
+                usint r{m_params->GetRingDimension()};
+                tmp_m_values = std::make_unique<VecType>(r, m_params->GetModulus());
+            }
+
+            inc_copy_from_shadow_hbm_real();
+            ::memcpy((char*)&tmp_m_values->m_data[0],tmp_m_values_shadow.get_hbm_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
+
+            inc_discard_shadow();
+            tmp_m_values_shadow.m_values = nullptr;
+            tmp_m_values_shadow.m_values_hbm = nullptr;
+            tmp_m_values_shadow.shadow_sync_state = SHADOW_NOTEXIST;
+            tmp_m_values_shadow.shadow_location = SHADOW_NOTEXIST;
         }
     }
 
     void copy_to_shadow() const {
         inc_copy_to_shadow();
+        ocb_entries_m.lock();
+        if(m_values_shadow.shadow_location==SHADOW_ON_HBM){
+            std::tuple<uint64_t,uint64_t> hbm_tmp = select_shadow_hbm_tracking_array(uint64_t(&m_values_shadow));
+            if(check_full_ocb_entries()){
+                std::tuple<uint64_t,uint64_t,bool*> tmp = evict_shadow_tracking_array();
+                insert_shadow_tracking_array(std::get<0>(hbm_tmp),std::get<1>(hbm_tmp),m_values_shadow.ongoing_flag);
+                insert_shadow_hbm_tracking_array(std::get<0>(tmp),std::get<1>(tmp));
+                
+                ShadowType<VecType>* tmp_m_values_shadow_addr = (ShadowType<VecType>*)std::get<1>(tmp);
+                copy_from_hbm_shadow(m_values_shadow);
+                copy_to_hbm_shadow(*tmp_m_values_shadow_addr);
+            }
+            else{
+                insert_shadow_tracking_array(std::get<0>(hbm_tmp),std::get<1>(hbm_tmp),m_values_shadow.ongoing_flag);
+                copy_from_hbm_shadow(m_values_shadow);
+            }
+        }
+        ocb_entries_m.unlock();
         if(m_values == nullptr) {
             if(m_values_shadow.shadow_sync_state != SHADOW_IS_AHEAD) {
                 OPENFHE_THROW(not_available_error, "m_values not created");
-            }        
+            }
             return;
         }
 
         if(m_values_shadow.shadow_sync_state == SHADOW_NOTEXIST) {
             create_shadow();   
         }            
-        if(m_values_shadow.shadow_sync_state == SHADOW_IS_BEHIND) {
-            // *m_values_shadow.m_values = * m_values;    
-            inc_copy_to_shadow_real();   
+        if(m_values_shadow.shadow_sync_state == SHADOW_IS_BEHIND) {   
+            inc_copy_to_shadow_real();
             ::memcpy(m_values_shadow.get_ptr(),(char*)&m_values->m_data[0],sizeof(uint64_t)*m_params->GetRingDimension());
             m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
         }
@@ -142,24 +216,91 @@ public:
         if(!m_values_shadow.m_values) {
             OPENFHE_THROW(not_available_error, "shadow not created");
         }
+        if(!other.m_values){
+            OPENFHE_THROW(not_available_error, "other shadow not created");
+        }
         else {
             inc_copy_from_other_shadow();
-            ::memcpy(m_values_shadow.get_ptr(),other.get_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
-            m_values_shadow.shadow_sync_state = other.shadow_sync_state;
+            if(m_values_shadow.shadow_location==SHADOW_ON_OCB && other.shadow_location==SHADOW_ON_OCB){
+                inc_copy_from_other_shadow1();
+                ::memcpy(m_values_shadow.get_ptr(),other.get_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
+                m_values_shadow.shadow_sync_state = other.shadow_sync_state;
+            }
+            else if(m_values_shadow.shadow_location==SHADOW_ON_OCB && other.shadow_location==SHADOW_ON_HBM){
+                inc_copy_from_other_shadow2();
+                ::memcpy(m_values_shadow.get_ptr(),other.get_hbm_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
+                m_values_shadow.shadow_sync_state = other.shadow_sync_state;
+            }
+            else if(m_values_shadow.shadow_location==SHADOW_ON_HBM && other.shadow_location==SHADOW_ON_OCB){
+                inc_copy_from_other_shadow3();
+                ::memcpy(m_values_shadow.get_hbm_ptr(),other.get_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
+                m_values_shadow.shadow_sync_state = other.shadow_sync_state;
+            }
+            else if(m_values_shadow.shadow_location==SHADOW_ON_HBM && other.shadow_location==SHADOW_ON_HBM){
+                inc_copy_from_other_shadow4();
+                ::memcpy(m_values_shadow.get_hbm_ptr(),other.get_hbm_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
+                m_values_shadow.shadow_sync_state = other.shadow_sync_state;
+            }
+            else{
+                OPENFHE_THROW(not_available_error, "wrong both location");
+            }
         }
     }
+
+    void copy_to_hbm_shadow(ShadowType<VecType>& tmp_m_values_shadow) const{
+        if(!tmp_m_values_shadow.m_values) {
+            return;
+        }
+        else{
+            if(!tmp_m_values_shadow.m_values_hbm){
+                tmp_m_values_shadow.m_values_hbm = std::make_shared<std::vector<uint64_t>>(m_params->GetRingDimension());
+            }
+            inc_copy_from_other_shadow3();
+            ::memcpy(tmp_m_values_shadow.get_hbm_ptr(),tmp_m_values_shadow.get_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
+            tmp_m_values_shadow.shadow_location = SHADOW_ON_HBM;
+        }
+    }
+
+    void copy_from_hbm_shadow(ShadowType<VecType>& tmp_m_values_shadow) const{
+        if(!tmp_m_values_shadow.m_values) {
+            OPENFHE_THROW(not_available_error, "shadow not created");
+        }
+        else{
+            inc_copy_from_other_shadow2();
+            ::memcpy(tmp_m_values_shadow.get_ptr(),tmp_m_values_shadow.get_hbm_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
+            tmp_m_values_shadow.shadow_location = SHADOW_ON_OCB;
+        }
+    }
+
     void create_shadow() const {
-        // VecType tmp(m_params->GetRingDimension());
-        // m_values_shadow->m_values = tmp;
-        // m_values_shadow.m_values = std::make_shared<VecType>(m_params->GetRingDimension());
+        if(m_values_shadow.m_values) return;
+
+        ocb_entries_m.lock();
+        if(check_full_ocb_entries()) discard_shadow();
+
         inc_create_shadow();
         m_values_shadow.m_values = std::make_shared<std::vector<uint64_t>>(m_params->GetRingDimension());
         m_values_shadow.shadow_sync_state = SHADOW_IS_BEHIND;
+        m_values_shadow.shadow_location = SHADOW_ON_OCB;
+
+        insert_shadow_tracking_array((uint64_t)&m_values,(uint64_t)&m_values_shadow,m_values_shadow.ongoing_flag);
+        ocb_entries_m.unlock();
     }
-    void discard_shadow() {        
-        m_values_shadow.m_values = nullptr;
-        m_values_shadow.shadow_sync_state = SHADOW_NOTEXIST;
+    void discard_shadow() const{        
+        if(check_full_hbm_entries()){
+            std::tuple<uint64_t,uint64_t> tmp = evict_shadow_hbm_tracking_array();
+            std::unique_ptr<VecType>* tmp_m_values_addr = (std::unique_ptr<VecType>*)std::get<0>(tmp);
+            ShadowType<VecType>* tmp_m_values_shadow_addr = (ShadowType<VecType>*)std::get<1>(tmp);
+            copy_from_shadow_for_discard(*tmp_m_values_addr,*tmp_m_values_shadow_addr);
+        }
+        std::tuple<uint64_t,uint64_t,bool*> tmp = evict_shadow_tracking_array();
+        ShadowType<VecType>* tmp_m_values_shadow_addr = (ShadowType<VecType>*)std::get<1>(tmp);
+        copy_to_hbm_shadow(*tmp_m_values_shadow_addr);
+        if((*tmp_m_values_shadow_addr).m_values){
+            insert_shadow_hbm_tracking_array(std::get<0>(tmp),std::get<1>(tmp));
+        }
     }
+
     void indicate_modified_shadow() {        
         if( m_values_shadow.shadow_sync_state != SHADOW_NOTEXIST)
            if( m_values_shadow.m_values == nullptr ) 
@@ -245,6 +386,9 @@ public:
         : m_format{p.m_format},
           m_params{p.m_params},
           m_values{p.m_values ? std::make_unique<VecType>(*p.m_values) : nullptr} {
+            ocb_entries_m.lock();
+            p.m_values_shadow.ongoing_flag = true;
+            ocb_entries_m.unlock();
             if(p.m_values_shadow.shadow_sync_state != SHADOW_NOTEXIST) {
                 this->create_shadow();
                 this->copy_from_other_shadow(p.m_values_shadow);
@@ -252,6 +396,9 @@ public:
             else {
                 this->m_values_shadow.shadow_sync_state = SHADOW_NOTEXIST;
             }
+            ocb_entries_m.lock();
+            p.m_values_shadow.ongoing_flag = false;
+            ocb_entries_m.unlock();
           }
 
     PolyImpl(PolyType&& p) noexcept

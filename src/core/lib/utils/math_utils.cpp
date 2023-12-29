@@ -28,12 +28,18 @@
 #include "utils/custom_task.h"
 
 uint32_t cnt_copy_from_shadow;
-uint32_t cnt_copy_from_shadow_real;
+uint32_t cnt_copy_from_shadow_ocb_real;
+uint32_t cnt_copy_from_shadow_hbm_real;
 uint32_t cnt_copy_to_shadow;
 uint32_t cnt_copy_to_root_shadow;
 uint32_t cnt_copy_to_shadow_real;
 uint32_t cnt_copy_from_other_shadow;
+uint32_t cnt_copy_from_other_shadow1;
+uint32_t cnt_copy_from_other_shadow2;
+uint32_t cnt_copy_from_other_shadow3;
+uint32_t cnt_copy_from_other_shadow4;
 uint32_t cnt_create_shadow;
+uint32_t cnt_discard_shadow;
 uint32_t cnt_create_root_shadow;
 uint32_t cnt_compute_implemented;
 uint32_t cnt_compute_not_implemented;
@@ -48,12 +54,18 @@ extern  void consumer(WorkQueue& queue);
 void init_stat() {
     std::cout << "init_stat" << std::endl;
     cnt_copy_from_shadow = 0;
-    cnt_copy_from_shadow_real = 0;
+    cnt_copy_from_shadow_ocb_real = 0;
+    cnt_copy_from_shadow_hbm_real = 0;
     cnt_copy_to_shadow = 0;
     cnt_copy_to_root_shadow = 0;
     cnt_copy_to_shadow_real = 0;
     cnt_copy_from_other_shadow = 0;
+    cnt_copy_from_other_shadow1 = 0;
+    cnt_copy_from_other_shadow2 = 0;
+    cnt_copy_from_other_shadow3 = 0;
+    cnt_copy_from_other_shadow4 = 0;
     cnt_create_shadow = 0;
+    cnt_discard_shadow = 0;
     cnt_create_root_shadow = 0;
     cnt_compute_implemented = 0;
     cnt_compute_not_implemented = 0;
@@ -63,15 +75,20 @@ void init_stat() {
 void print_stat() {
     std::cout << "print_stat" << std::endl;
     std::cout << "cnt_copy_from_shadow: " << cnt_copy_from_shadow<< std::endl;
-    std::cout << "cnt_copy_from_shadow_real: " << cnt_copy_from_shadow_real<< std::endl;
+    std::cout << "ORIGIN <-- OCB          : " << cnt_copy_from_shadow_ocb_real<< std::endl;
+    std::cout << "ORIGIN     <--     HBM  : " << cnt_copy_from_shadow_hbm_real<< std::endl;
     std::cout << "cnt_copy_to_shadow: " << cnt_copy_to_shadow<< std::endl;
-    std::cout << "cnt_copy_to_shadow_real: " << cnt_copy_to_shadow_real<< std::endl;
+    std::cout << "ORIGIN --> OCB          : " << cnt_copy_to_shadow_real<< std::endl;
     std::cout << "cnt_copy_from_other_shadow: " << cnt_copy_from_other_shadow<< std::endl;
+    std::cout << "           OCB          : " << cnt_copy_from_other_shadow1<< std::endl;
+    std::cout << "           OCB <-- HBM  : " << cnt_copy_from_other_shadow2<< std::endl;
+    std::cout << "           OCB --> HBM  : " << cnt_copy_from_other_shadow3<< std::endl;
+    std::cout << "                   HBM  : " << cnt_copy_from_other_shadow4<< std::endl;
     std::cout << "cnt_create_shadow: " << cnt_create_shadow<< std::endl;
+    std::cout << "cnt_discard_shadow: " << cnt_discard_shadow<< std::endl;
     std::cout << "cnt_copy_to_root_shadow: " << cnt_copy_to_root_shadow<< std::endl;
     std::cout << "cnt_create_root_shadow: " << cnt_create_root_shadow<< std::endl;
     std::cout << "cnt_compute_implemented: " << cnt_compute_implemented<< std::endl;
-    std::cout << "cnt_compute_not_implemented: " << cnt_compute_not_implemented<< std::endl;
 
     work_queue.finish();
 
@@ -88,8 +105,11 @@ void set_num_prallel_jobs(uint32_t num_parallel) {
 void inc_copy_from_shadow() {
     cnt_copy_from_shadow++;
 }
-void inc_copy_from_shadow_real()    {
-    cnt_copy_from_shadow_real++;
+void inc_copy_from_shadow_ocb_real()    {
+    cnt_copy_from_shadow_ocb_real++;
+}
+void inc_copy_from_shadow_hbm_real()    {
+    cnt_copy_from_shadow_hbm_real++;
 }
 void inc_copy_to_shadow()   {
     cnt_copy_to_shadow++;
@@ -100,11 +120,26 @@ void inc_copy_to_root_shadow()  {
 void inc_copy_to_shadow_real()  {
     cnt_copy_to_shadow_real++;
 }
+void inc_copy_from_other_shadow1()   {
+    cnt_copy_from_other_shadow1++;
+}
+void inc_copy_from_other_shadow2()   {
+    cnt_copy_from_other_shadow2++;
+}
+void inc_copy_from_other_shadow3()   {
+    cnt_copy_from_other_shadow3++;
+}
+void inc_copy_from_other_shadow4()   {
+    cnt_copy_from_other_shadow4++;
+}
 void inc_copy_from_other_shadow()   {
     cnt_copy_from_other_shadow++;
 }
 void inc_create_shadow()    {
     cnt_create_shadow++;
+}
+void inc_discard_shadow()    {
+    cnt_discard_shadow++;
 }
 void inc_create_root_shadow()    {
     cnt_create_root_shadow++;

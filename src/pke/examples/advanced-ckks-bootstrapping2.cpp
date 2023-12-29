@@ -99,7 +99,7 @@ usint Initialize(CryptoContext<DCRTPoly>& cryptoContext, KeyPair<lbcrypto::DCRTP
     * you do not need to set the ring dimension.
     */
     parameters.SetSecurityLevel(HEStd_NotSet);
-    parameters.SetRingDim(1 << 12);
+    parameters.SetRingDim(1 << 16);
 
     /*  A3) Key switching parameters.
     * By default, we use HYBRID key switching with a digit size of 3.

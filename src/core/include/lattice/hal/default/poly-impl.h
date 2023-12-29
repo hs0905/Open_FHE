@@ -99,18 +99,42 @@ template <typename VecType>
 PolyImpl<VecType>& PolyImpl<VecType>::operator=(const PolyImpl& rhs) noexcept {
     m_format = rhs.m_format;
     m_params = rhs.m_params;
+    ocb_entries_m.lock();
+    rhs.m_values_shadow.ongoing_flag = true;
+    ocb_entries_m.unlock();
     if (!rhs.m_values) {
         m_values = nullptr;
-        m_values_shadow = rhs.m_values_shadow;
+        if(rhs.m_values_shadow.m_values){
+            this->create_shadow();
+            this->copy_from_other_shadow(rhs.m_values_shadow);
+            ocb_entries_m.lock();
+            rhs.m_values_shadow.ongoing_flag = false;
+            ocb_entries_m.unlock();
+            // m_values_shadow = rhs.m_values_shadow;
+        }
         return *this;
     }
     if (m_values) {
         *m_values = *rhs.m_values;
-        m_values_shadow = rhs.m_values_shadow;
+        if(rhs.m_values_shadow.m_values){
+            this->create_shadow();
+            this->copy_from_other_shadow(rhs.m_values_shadow);
+            ocb_entries_m.lock();
+            rhs.m_values_shadow.ongoing_flag = false;
+            ocb_entries_m.unlock();
+            // m_values_shadow = rhs.m_values_shadow;
+        }
         return *this;
     }
     m_values = std::make_unique<VecType>(*rhs.m_values);
-    m_values_shadow = rhs.m_values_shadow;
+    if(rhs.m_values_shadow.m_values){
+        this->create_shadow();
+        this->copy_from_other_shadow(rhs.m_values_shadow);
+        ocb_entries_m.lock();
+        rhs.m_values_shadow.ongoing_flag = false;
+        ocb_entries_m.unlock();
+        // m_values_shadow = rhs.m_values_shadow;
+    }
     return *this;
 }
 
@@ -970,6 +994,9 @@ void consumer(WorkQueue& queue) {
 
             switch(item->task_type) {
                 case TASK_TYPE_PlainModMulEqScalar: {
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = true;
+                        ocb_entries_m.unlock();
                         poly->copy_to_shadow();
                     
                         PlainModMulEqScalar(
@@ -980,11 +1007,18 @@ void consumer(WorkQueue& queue) {
                         );    
 
                         poly->indicate_modified_shadow();
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = false;
+                        ocb_entries_m.unlock();
                 
                         inc_compute_implemented();  
                     }
                     break;
                 case TASK_TYPE_PlusScalar: {
+                        ocb_entries_m.lock();
+                        poly2->m_values_shadow.ongoing_flag = true;
+                        poly->m_values_shadow.ongoing_flag = true;
+                        ocb_entries_m.unlock();
                         poly2->create_shadow();
                         poly->copy_to_shadow();
                         
@@ -999,11 +1033,19 @@ void consumer(WorkQueue& queue) {
                         }
 
                         poly2->indicate_modified_shadow();
+                        ocb_entries_m.lock();
+                        poly2->m_values_shadow.ongoing_flag = false;
+                        poly->m_values_shadow.ongoing_flag = false;
+                        ocb_entries_m.unlock();
                         
                         inc_compute_implemented();
                     }
                     break;
                 case TASK_TYPE_MinusScalar: {
+                        ocb_entries_m.lock();
+                        poly2->m_values_shadow.ongoing_flag = true;
+                        poly->m_values_shadow.ongoing_flag = true;
+                        ocb_entries_m.unlock();
                         poly2->create_shadow();
                         poly->copy_to_shadow();
                         
@@ -1019,11 +1061,19 @@ void consumer(WorkQueue& queue) {
                         }
 
                         poly2->indicate_modified_shadow();
+                        ocb_entries_m.lock();
+                        poly2->m_values_shadow.ongoing_flag = false;
+                        poly->m_values_shadow.ongoing_flag = false;
+                        ocb_entries_m.unlock();
                         
                         inc_compute_implemented();
                     }
                     break;
                 case TASK_TYPE_PlainModMulScalar:   {
+                        ocb_entries_m.lock();
+                        poly2->m_values_shadow.ongoing_flag = true;
+                        poly->m_values_shadow.ongoing_flag = true;
+                        ocb_entries_m.unlock();
                         poly2->create_shadow();
                         poly->copy_to_shadow();
 
@@ -1036,10 +1086,19 @@ void consumer(WorkQueue& queue) {
                         );
                         
                         poly2->indicate_modified_shadow();
+                        ocb_entries_m.lock();
+                        poly2->m_values_shadow.ongoing_flag = false;
+                        poly->m_values_shadow.ongoing_flag = false;
+                        ocb_entries_m.unlock();
                         inc_compute_implemented();
                     }
                     break;
                 case TASK_TYPE_Minus: {
+                        ocb_entries_m.lock();
+                        poly2->m_values_shadow.ongoing_flag = true;
+                        poly->m_values_shadow.ongoing_flag = true;
+                        poly3->m_values_shadow.ongoing_flag = true;
+                        ocb_entries_m.unlock();
                         poly2->create_shadow();
                         poly->copy_to_shadow(); 
                         poly3->copy_to_shadow(); 
@@ -1057,10 +1116,19 @@ void consumer(WorkQueue& queue) {
                         }
 
                         poly2->indicate_modified_shadow();
+                        ocb_entries_m.lock();
+                        poly2->m_values_shadow.ongoing_flag = false;
+                        poly->m_values_shadow.ongoing_flag = false;
+                        poly3->m_values_shadow.ongoing_flag = false;
+                        ocb_entries_m.unlock();
                         inc_compute_implemented();                
                     }   
                     break;
                 case TASK_TYPE_PlusInPlace: {
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = true;
+                        poly2->m_values_shadow.ongoing_flag = true;
+                        ocb_entries_m.unlock();
                         poly->copy_to_shadow();
                         poly2->copy_to_shadow();
 
@@ -1077,11 +1145,19 @@ void consumer(WorkQueue& queue) {
                         // m_values->ModAddEq(*element.m_values);
                         
                         poly->indicate_modified_shadow();
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = false;
+                        poly2->m_values_shadow.ongoing_flag = false;
+                        ocb_entries_m.unlock();
 
                         inc_compute_implemented(); 
                     }
                     break;
                 case TASK_TYPE_MinusInPlace: {
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = true;
+                        poly2->m_values_shadow.ongoing_flag = true;
+                        ocb_entries_m.unlock();
                         poly->copy_to_shadow();
                         poly2->copy_to_shadow();
 
@@ -1098,11 +1174,19 @@ void consumer(WorkQueue& queue) {
                         }
 
                         poly->indicate_modified_shadow();
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = false;
+                        poly2->m_values_shadow.ongoing_flag = false;
+                        ocb_entries_m.unlock();
 
                         inc_compute_implemented();
                     }
                     break;
                 case TASK_TYPE_AutomorphismTransform: {
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = true;
+                        poly2->m_values_shadow.ongoing_flag = true;
+                        ocb_entries_m.unlock();
                         poly->copy_to_shadow();
                         poly2->copy_to_shadow();
                         
@@ -1112,9 +1196,16 @@ void consumer(WorkQueue& queue) {
                         inc_compute_implemented();
                         
                         poly2->indicate_modified_shadow();
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = false;
+                        poly2->m_values_shadow.ongoing_flag = false;
+                        ocb_entries_m.unlock();
                     }
                     break;
                 case TASK_TYPE_SwitchModulus: {
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = true;
+                        ocb_entries_m.unlock();
                         poly->copy_to_shadow();
 
                         uint64_t* data = poly->m_values_shadow.get_ptr();
@@ -1145,6 +1236,9 @@ void consumer(WorkQueue& queue) {
                         }
 
                         poly->indicate_modified_shadow();
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = false;
+                        ocb_entries_m.unlock();
 
                         inc_compute_implemented();
                     }
@@ -1154,9 +1248,15 @@ void consumer(WorkQueue& queue) {
                         uint64_t ru = item->param2;
                         uint64_t modulus = item->param3;
 
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = true;
+                        ocb_entries_m.unlock();
                         poly->copy_to_shadow();
                         ChineseRemainderTransformFTT<NativeVector>().InverseTransformFromBitReverseInPlace(NativeInteger::Integer(ru), co, poly->m_values_shadow.get_ptr(),poly->GetLength(),modulus);
                         poly->indicate_modified_shadow();
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = false;
+                        ocb_entries_m.unlock();
                         inc_compute_implemented();
                     }
                     break;
@@ -1165,13 +1265,23 @@ void consumer(WorkQueue& queue) {
                         uint64_t ru = item->param2;
                         uint64_t modulus = item->param3;
 
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = true;
+                        ocb_entries_m.unlock();
                         poly->copy_to_shadow();
                         ChineseRemainderTransformFTT<NativeVector>().ForwardTransformToBitReverseInPlace(NativeInteger::Integer(ru), co, poly->m_values_shadow.get_ptr(),poly->GetLength(),modulus);
                         poly->indicate_modified_shadow();
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = false;
+                        ocb_entries_m.unlock();
                         inc_compute_implemented();
                     }
                     break;
                 case TASK_TYPE_Plus: {
+                        ocb_entries_m.lock();
+                        poly2->m_values_shadow.ongoing_flag = true;
+                        poly3->m_values_shadow.ongoing_flag = true;
+                        ocb_entries_m.unlock();
                         poly2->copy_to_shadow();
                         poly3->copy_to_shadow();
 
@@ -1186,11 +1296,19 @@ void consumer(WorkQueue& queue) {
                         }
 
                         poly2->indicate_modified_shadow();
+                        ocb_entries_m.lock();
+                        poly2->m_values_shadow.ongoing_flag = false;
+                        poly3->m_values_shadow.ongoing_flag = false;
+                        ocb_entries_m.unlock();
                         inc_compute_implemented();
                     }
                     break;
                 case TASK_TYPE_Times: 
                 case TASK_TYPE_TimesNoCheck: {
+                        ocb_entries_m.lock();
+                        poly2->m_values_shadow.ongoing_flag = true;
+                        poly3->m_values_shadow.ongoing_flag = true;
+                        ocb_entries_m.unlock();
                         poly2->copy_to_shadow();
                         poly3->copy_to_shadow();
 
@@ -1205,10 +1323,18 @@ void consumer(WorkQueue& queue) {
                         );
                         
                         poly2->indicate_modified_shadow();
+                        ocb_entries_m.lock();
+                        poly2->m_values_shadow.ongoing_flag = false;
+                        poly3->m_values_shadow.ongoing_flag = false;
+                        ocb_entries_m.unlock();
                         inc_compute_implemented();                    
                     }
                     break;
                 case TASK_TYPE_TimesInPlace: {
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = true;
+                        poly2->m_values_shadow.ongoing_flag = true;
+                        ocb_entries_m.unlock();
                         poly->copy_to_shadow();
                         poly2->copy_to_shadow();
 
@@ -1223,6 +1349,10 @@ void consumer(WorkQueue& queue) {
                         );
                         
                         poly->indicate_modified_shadow();
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = false;
+                        poly2->m_values_shadow.ongoing_flag = false;
+                        ocb_entries_m.unlock();
                         inc_compute_implemented();
                     }
                     break;
