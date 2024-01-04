@@ -25,7 +25,8 @@
 #include <functional>
 #include <string>
 #include <algorithm>
-
+#include <unordered_map>
+#include <list>
 #include <iostream>
 
 

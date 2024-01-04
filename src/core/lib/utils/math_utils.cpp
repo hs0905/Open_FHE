@@ -26,6 +26,7 @@
 #include <thread>
 
 #include "utils/custom_task.h"
+#include "utils/memory_tracking.h"
 
 uint32_t cnt_copy_from_shadow;
 uint32_t cnt_copy_from_shadow_ocb_real;
@@ -46,6 +47,8 @@ uint32_t cnt_compute_not_implemented;
 
 WorkQueue work_queue;
 std::thread consumerThread;
+
+void initialize_memory_tracking();
 
 namespace lbcrypto{
 extern  void consumer(WorkQueue& queue);
@@ -70,6 +73,7 @@ void init_stat() {
     cnt_compute_implemented = 0;
     cnt_compute_not_implemented = 0;
 
+    initialize_memory_tracking();
     consumerThread = std::thread(lbcrypto::consumer, std::ref(work_queue));
 }
 void print_stat() {

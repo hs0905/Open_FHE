@@ -289,15 +289,19 @@ public:
     void discard_shadow() const{        
         if(check_full_hbm_entries()){
             std::tuple<uint64_t,uint64_t> tmp = evict_shadow_hbm_tracking_array();
-            std::unique_ptr<VecType>* tmp_m_values_addr = (std::unique_ptr<VecType>*)std::get<0>(tmp);
-            ShadowType<VecType>* tmp_m_values_shadow_addr = (ShadowType<VecType>*)std::get<1>(tmp);
-            copy_from_shadow_for_discard(*tmp_m_values_addr,*tmp_m_values_shadow_addr);
+            if(std::get<0>(tmp)!=0){
+                std::unique_ptr<VecType>* tmp_m_values_addr = (std::unique_ptr<VecType>*)std::get<0>(tmp);
+                ShadowType<VecType>* tmp_m_values_shadow_addr = (ShadowType<VecType>*)std::get<1>(tmp);
+                copy_from_shadow_for_discard(*tmp_m_values_addr,*tmp_m_values_shadow_addr);
+            }
         }
         std::tuple<uint64_t,uint64_t,bool*> tmp = evict_shadow_tracking_array();
-        ShadowType<VecType>* tmp_m_values_shadow_addr = (ShadowType<VecType>*)std::get<1>(tmp);
-        copy_to_hbm_shadow(*tmp_m_values_shadow_addr);
-        if((*tmp_m_values_shadow_addr).m_values){
-            insert_shadow_hbm_tracking_array(std::get<0>(tmp),std::get<1>(tmp));
+        if(std::get<0>(tmp)!=0){
+            ShadowType<VecType>* tmp_m_values_shadow_addr = (ShadowType<VecType>*)std::get<1>(tmp);
+            copy_to_hbm_shadow(*tmp_m_values_shadow_addr);
+            if((*tmp_m_values_shadow_addr).m_values){
+                insert_shadow_hbm_tracking_array(std::get<0>(tmp),std::get<1>(tmp));
+            }
         }
     }
 
