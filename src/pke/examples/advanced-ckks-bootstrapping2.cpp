@@ -47,12 +47,14 @@ void BootstrapExample(CryptoContext<DCRTPoly> cryptoContext, KeyPair<lbcrypto::D
 
 void init_stat();
 void print_stat();
+void print_memory_stat();
 void set_num_prallel_jobs(uint32_t num_parallel);
 
 int main(int argc, char* argv[]) {
     // We run the example with 8 slots and ring dimension 4096 to illustrate how to run bootstrapping with a sparse plaintext.
     // Using a sparse plaintext and specifying the smaller number of slots gives a performance improvement (typically up to 3x).
     init_stat();
+    print_memory_stat();
 
     CryptoContext<DCRTPoly> cryptoContext;
     KeyPair<lbcrypto::DCRTPoly> keyPair;
@@ -73,6 +75,7 @@ int main(int argc, char* argv[]) {
     t4.join();
 
     print_stat();
+    print_memory_stat();
 }
 
 usint Initialize(CryptoContext<DCRTPoly>& cryptoContext, KeyPair<lbcrypto::DCRTPoly>& keyPair, uint32_t numSlots) {
