@@ -31,7 +31,7 @@
 
 
 #define FPGA_N 65536
-#define OCB_MB 100 // OCB = On-Chip Buffer
+#define OCB_MB 65536 // OCB = On-Chip Buffer
 #define HBM_GB 8
 #define POLY_SIZE (8 * FPGA_N)
 #define MB_TO_BYTES 1048576 // 1 MB = 1024 * 1024 Bytes

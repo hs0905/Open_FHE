@@ -182,16 +182,21 @@ public:
             std::tuple<uint64_t,uint64_t> hbm_tmp = select_shadow_hbm_tracking_array(uint64_t(&m_values_shadow));
             if(check_full_ocb_entries()){
                 std::tuple<uint64_t,uint64_t,bool*> tmp = evict_shadow_tracking_array();
-                insert_shadow_tracking_array(std::get<0>(hbm_tmp),std::get<1>(hbm_tmp),m_values_shadow.ongoing_flag);
-                insert_shadow_hbm_tracking_array(std::get<0>(tmp),std::get<1>(tmp));
+                if(std::get<1>(hbm_tmp)) insert_shadow_tracking_array(std::get<0>(hbm_tmp),std::get<1>(hbm_tmp),m_values_shadow.ongoing_flag);
+                if(std::get<1>(tmp)) insert_shadow_hbm_tracking_array(std::get<0>(tmp),std::get<1>(tmp));
                 
-                ShadowType<VecType>* tmp_m_values_shadow_addr = (ShadowType<VecType>*)std::get<1>(tmp);
-                copy_from_hbm_shadow(m_values_shadow);
-                copy_to_hbm_shadow(*tmp_m_values_shadow_addr);
+                
+                if(std::get<1>(hbm_tmp)) copy_from_hbm_shadow(m_values_shadow);
+                if(std::get<1>(tmp)){
+                    ShadowType<VecType>* tmp_m_values_shadow_addr = (ShadowType<VecType>*)std::get<1>(tmp);
+                    copy_to_hbm_shadow(*tmp_m_values_shadow_addr);
+                }
             }
             else{
-                insert_shadow_tracking_array(std::get<0>(hbm_tmp),std::get<1>(hbm_tmp),m_values_shadow.ongoing_flag);
-                copy_from_hbm_shadow(m_values_shadow);
+                if(std::get<1>(hbm_tmp)){
+                    insert_shadow_tracking_array(std::get<0>(hbm_tmp),std::get<1>(hbm_tmp),m_values_shadow.ongoing_flag);
+                    copy_from_hbm_shadow(m_values_shadow);
+                }
             }
         }
         ocb_entries_m.unlock();

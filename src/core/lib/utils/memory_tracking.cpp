@@ -3,14 +3,14 @@
 uint32_t cnt_cur_ocb_entries = 0;
 uint32_t cnt_cur_hbm_entries = 0;
 std::mutex ocb_entries_m;
-std::vector<std::tuple<uint64_t,uint64_t,bool*>> shadow_tracking_array;
-std::vector<std::tuple<uint64_t,uint64_t>> shadow_hbm_tracking_array;
-std::unordered_map<uint64_t,std::vector<std::tuple<uint64_t,uint64_t,bool*>>::iterator> shadow_tracking_map;
-std::unordered_map<uint64_t,std::vector<std::tuple<uint64_t,uint64_t>>::iterator> shadow_hbm_tracking_map;
-std::deque<std::vector<std::tuple<uint64_t,uint64_t,bool*>>::iterator> ocb_freelist;
-std::deque<std::vector<std::tuple<uint64_t,uint64_t>>::iterator> hbm_freelist;
-std::deque<std::vector<std::tuple<uint64_t,uint64_t,bool*>>::iterator> ocb_fifolist;
-std::deque<std::vector<std::tuple<uint64_t,uint64_t>>::iterator> hbm_fifolist;
+std::deque<std::tuple<uint64_t,uint64_t,bool*>> shadow_tracking_array;
+std::deque<std::tuple<uint64_t,uint64_t>> shadow_hbm_tracking_array;
+std::unordered_map<uint64_t,std::deque<std::tuple<uint64_t,uint64_t,bool*>>::iterator> shadow_tracking_map;
+std::unordered_map<uint64_t,std::deque<std::tuple<uint64_t,uint64_t>>::iterator> shadow_hbm_tracking_map;
+// std::deque<std::vector<std::tuple<uint64_t,uint64_t,bool*>>::iterator> ocb_freelist;
+// std::deque<std::vector<std::tuple<uint64_t,uint64_t>>::iterator> hbm_freelist;
+// std::deque<std::vector<std::tuple<uint64_t,uint64_t,bool*>>::iterator> ocb_fifolist;
+// std::deque<std::vector<std::tuple<uint64_t,uint64_t>>::iterator> hbm_fifolist;
 bool false_flag = false;
 
 
@@ -30,15 +30,15 @@ void print_memory_stat(){
 }
 
 void initialize_memory_tracking(){
-    for(size_t i=0; i<OCB_ENTRIES_NUM; i++){
-        shadow_tracking_array.push_back(std::make_tuple(0,0,&false_flag));
-        ocb_freelist.push_front(shadow_tracking_array.end()-1);
-    }
+    // for(size_t i=0; i<OCB_ENTRIES_NUM; i++){
+    //     shadow_tracking_array.push_front(std::make_tuple(0,0,&false_flag));
+    //     cnt_cur_ocb_entries = OCB_ENTRIES_NUM;
+    // }
     
-    for(size_t i=0; i<HBM_ENTRIES_NUM; i++){
-        shadow_hbm_tracking_array.push_back(std::make_tuple(0,0));
-        hbm_freelist.push_front(shadow_hbm_tracking_array.end()-1);
-    }
+    // for(size_t i=0; i<HBM_ENTRIES_NUM; i++){
+    //     shadow_hbm_tracking_array.push_front(std::make_tuple(0,0));
+    //     cnt_cur_hbm_entries = cnt_cur_hbm_entries;
+    // }
 }
 
 void inc_cur_ocb_entries(){
@@ -67,125 +67,172 @@ void print_shadow_tracking_array(){
 }
 
 void print_shadow_tracking_map(){
+    std::cout << "----------map------------" << std::endl;
+    for(const auto& entry : shadow_tracking_map){
+        std::cout << entry.first << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "---------------------------" << std::endl;
 
 }
 
 void insert_shadow_tracking_array(uint64_t m_values_addr, uint64_t m_values_shadow_addr, bool &ongoing_flag){
-    auto it = ocb_freelist.back();
-    ocb_freelist.pop_back();
-    *it = std::make_tuple(m_values_addr,m_values_shadow_addr,&ongoing_flag);
-    // shadow_tracking_array.push_front(std::make_tuple(m_values_addr,m_values_shadow_addr,&ongoing_flag));
-    shadow_tracking_map.insert(std::make_pair(m_values_shadow_addr,it));
+    shadow_tracking_array.push_front(std::make_tuple(m_values_addr,m_values_shadow_addr,&ongoing_flag));
     // shadow_tracking_map.insert(std::make_pair(m_values_shadow_addr,shadow_tracking_array.begin()));
-    ocb_fifolist.push_front(it);
+    shadow_tracking_map[m_values_shadow_addr] = shadow_tracking_array.begin();
+
+    // std::cout << "insert" << std::endl;
+    // std::cout << m_values_shadow_addr << std::endl;
+    // print_shadow_tracking_array();
+    // print_shadow_tracking_map();
+
     inc_cur_ocb_entries();
 }
 
 void insert_shadow_hbm_tracking_array(uint64_t m_values_addr, uint64_t m_values_shadow_addr){
-    auto it = hbm_freelist.back();
-    hbm_freelist.pop_back();
-    *it = std::make_tuple(m_values_addr,m_values_shadow_addr);
-    // shadow_hbm_tracking_array.push_front(std::make_tuple(m_values_addr,m_values_shadow_addr));
-    shadow_hbm_tracking_map.insert(std::make_pair(m_values_shadow_addr,it));
+    shadow_hbm_tracking_array.push_front(std::make_tuple(m_values_addr,m_values_shadow_addr));
     // shadow_hbm_tracking_map.insert(std::make_pair(m_values_shadow_addr,shadow_hbm_tracking_array.begin()));
-    hbm_fifolist.push_front(it);
+    shadow_hbm_tracking_map[m_values_shadow_addr] = shadow_hbm_tracking_array.begin();
     inc_cur_hbm_entries();
 }
 
 std::tuple<uint64_t,uint64_t,bool*> evict_shadow_tracking_array(){
-    auto it = ocb_fifolist.back();
-    while(*std::get<2>(*it)==true){
-        ocb_fifolist.pop_back();
-        ocb_fifolist.push_front(it);
-        it = ocb_fifolist.back();
+    auto tmp = shadow_tracking_array.back();
+    if(std::get<1>(tmp) == 0){
+        shadow_tracking_array.pop_back();
+        dec_cur_ocb_entries();
+        return tmp;
     }
-    shadow_tracking_map.erase(std::get<1>(*it));
-    auto tmp = *it;
-    *it = std::make_tuple(0,0,&false_flag);
-    ocb_freelist.push_front(it);
-    ocb_fifolist.pop_back();
+    while(*std::get<2>(tmp)==true){
+        shadow_tracking_array.pop_back();
+        shadow_tracking_array.push_front(tmp);
+        shadow_tracking_map[std::get<1>(tmp)] = shadow_tracking_array.begin();
+        tmp = shadow_tracking_array.back();
+    }
+    auto it = shadow_tracking_map.find(std::get<1>(tmp));
+    if(it == shadow_tracking_map.end()){
+        // std::cout << shadow_tracking_array.size() << " " << shadow_tracking_map.size() << std::endl;
+        // std::cout << std::get<1>(tmp) << std::endl;
+        // print_shadow_tracking_array();
+        // print_shadow_tracking_map();
+        printf("wrong evict_shadow_tracking_array\n");
+        while(1){
+            usleep(1000);
+        }
+    }
+    shadow_tracking_map.erase(it);
+    shadow_tracking_array.pop_back();
+
+    // std::cout << "evict" << std::endl;
+    // std::cout << std::get<1>(tmp) << std::endl;
+    // print_shadow_tracking_array();
+    // print_shadow_tracking_map();
+    
     dec_cur_ocb_entries();
     return tmp;
+    // std::tuple<uint64_t,uint64_t,bool*> tmp;
+    // for(auto iter=shadow_tracking_array.rbegin(); iter != shadow_tracking_array.rend(); iter++){
+    //     if(*std::get<2>(*iter)==false){
+    //         tmp = *iter;
+    //         shadow_tracking_array.erase(iter.base()-1);
+    //         dec_cur_ocb_entries();
+    //         return tmp;
+    //     }
+    // }
+
+    // printf("wrong evict_shadow_tracking_array\n");
+    // return tmp;
 }
 
 std::tuple<uint64_t,uint64_t> evict_shadow_hbm_tracking_array(){
-    auto it = hbm_fifolist.back();
-    shadow_hbm_tracking_map.erase(std::get<1>(*it));
-    auto tmp = *it;
-    *it = std::make_tuple(0,0);
-    hbm_freelist.push_front(it);
-    hbm_fifolist.pop_back();
+    auto tmp = shadow_hbm_tracking_array.back();
+    if(std::get<1>(tmp) == 0){
+        shadow_tracking_array.pop_back();
+        dec_cur_ocb_entries();
+        return tmp;
+    }
+    auto it = shadow_hbm_tracking_map.find(std::get<1>(tmp));
+    if(it == shadow_hbm_tracking_map.end()){
+        printf("wrong evict_shadow_hbm_tracking_array\n");
+        while(1){
+            usleep(1000);
+        }
+    }
+    shadow_hbm_tracking_map.erase(it);
+    shadow_hbm_tracking_array.pop_back();
     dec_cur_hbm_entries();
     return tmp;
+    // std::tuple<uint64_t,uint64_t> tmp = shadow_hbm_tracking_array.back();
+    // shadow_hbm_tracking_array.pop_back();
+    // dec_cur_hbm_entries();
+    // return tmp;
 }
 
 std::tuple<uint64_t,uint64_t,bool*> select_shadow_tracking_array(uint64_t m_values_shadow_addr){
     auto it = shadow_tracking_map.find(m_values_shadow_addr);
-    if(it == shadow_tracking_map.end()) printf("wrong select_shadow_tracking_array1\n");
+    if(it == shadow_tracking_map.end()) std::cout << "wrong select_shadow_tracking_array" << std::endl;
     auto tmp = *(it->second);
     // shadow_tracking_array.erase(it->second);
-    auto it_ = ocb_fifolist.begin();
-    while(it_ != ocb_fifolist.end()){
-        if(*it_ == it->second) break;
-        ++it_;
-    }
-    if(it_ == ocb_fifolist.end()) printf("wrong select_shadow_tracking_array2\n");
-    ocb_fifolist.erase(it_);
-    *(it->second) = std::make_tuple(0,0,&false_flag);
-    ocb_freelist.push_front(it->second);
+    *(it->second) = std::make_tuple(0,0,nullptr);
     shadow_tracking_map.erase(it);
     dec_cur_ocb_entries();
     return tmp;
+    // std::tuple<uint64_t,uint64_t,bool*> tmp;
+    // for(auto iter=shadow_tracking_array.rbegin(); iter != shadow_tracking_array.rend(); iter++){
+    //     if(std::get<1>(*iter)==m_values_shadow_addr){
+    //         tmp = *iter;
+    //         shadow_tracking_array.erase(iter.base()-1);
+    //         dec_cur_ocb_entries();
+    //         return tmp;
+    //     }
+    // }
+
+    // printf("wrong evict_shadow_hbm_tracking_array\n");
+    // return tmp;
 }
 
 std::tuple<uint64_t,uint64_t> select_shadow_hbm_tracking_array(uint64_t m_values_shadow_addr){
     auto it = shadow_hbm_tracking_map.find(m_values_shadow_addr);
-    if(it == shadow_hbm_tracking_map.end()) printf("wrong select_shadow_hbm_tracking_array1\n");
+    if(it == shadow_hbm_tracking_map.end()) std::cout << "wrong select_shadow_hbm_tracking_array" << std::endl;
     auto tmp = *(it->second);
-    auto it_ = hbm_fifolist.begin();
-    while(it_ != hbm_fifolist.end()){
-        if(*it_ == it->second) break;
-        ++it_;
-    }
-    if(it_ == hbm_fifolist.end()) printf("wrong select_shadow_hbm_tracking_array2\n");
-    hbm_fifolist.erase(it_);
+    // shadow_hbm_tracking_array.erase(it->second);
     *(it->second) = std::make_tuple(0,0);
-    hbm_freelist.push_front(it->second);
     shadow_hbm_tracking_map.erase(it);
     dec_cur_hbm_entries();
     return tmp;
+    // std::tuple<uint64_t,uint64_t> tmp;
+    // for(auto iter=shadow_hbm_tracking_array.rbegin(); iter != shadow_hbm_tracking_array.rend(); iter++){
+    //     if(std::get<1>(*iter)==m_values_shadow_addr){
+    //         tmp = *iter;
+    //         shadow_hbm_tracking_array.erase(iter.base()-1);
+    //         dec_cur_hbm_entries();
+    //         return tmp;
+    //     }
+    // }
+    
+    // printf("wrong select_shadow_hbm_tracking_array\n");
+    // while(1){
+    //     usleep(1000);
+    // }
+    // return tmp;
 }
 
 void clean_shadow_tracking_array(uint64_t m_values_shadow_addr){
     ocb_entries_m.lock();
     auto it = shadow_tracking_map.find(m_values_shadow_addr);
     if(it != shadow_tracking_map.end()){
-        ocb_freelist.push_front(it->second);
-        *(it->second) = std::make_tuple(0,0,&false_flag);
+        // shadow_tracking_array.erase(it->second);
+        *(it->second) = std::make_tuple(0,0,nullptr);
         shadow_tracking_map.erase(it);
-        auto it_ = ocb_fifolist.begin();
-        while(it_ != ocb_fifolist.end()){
-            if(*it_ == it->second) break;
-            ++it_;
-        }
-        if(it_ == ocb_fifolist.end()) printf("wrong clean_shadow_tracking_array1\n");
-        ocb_fifolist.erase(it_);
         dec_cur_ocb_entries();
         ocb_entries_m.unlock();
         return;
     }
     auto it_ = shadow_hbm_tracking_map.find(m_values_shadow_addr);
     if(it_ != shadow_hbm_tracking_map.end()){
-        hbm_freelist.push_front(it_->second);
+        // shadow_hbm_tracking_array.erase(it_->second);
         *(it_->second) = std::make_tuple(0,0);
         shadow_hbm_tracking_map.erase(it_);
-        auto it__ = hbm_fifolist.begin();
-        while(it__ != hbm_fifolist.end()){
-            if(*it__ == it_->second) break;
-            ++it__;
-        }
-        if(it__ == hbm_fifolist.end()) printf("wrong clean_shadow_tracking_array2\n");
-        hbm_fifolist.erase(it__);
         dec_cur_hbm_entries();
         ocb_entries_m.unlock();
         return;
@@ -193,6 +240,40 @@ void clean_shadow_tracking_array(uint64_t m_values_shadow_addr){
 
     ocb_entries_m.unlock();
     return;
+    
+    // ocb_entries_m.lock();
+    // auto shadow_remove_if_result = std::remove_if(
+    //     shadow_tracking_array.begin(),
+    //     shadow_tracking_array.end(),
+    //     [m_values_shadow_addr](const std::tuple<uint64_t, uint64_t, bool*>& t) {
+    //         return std::get<1>(t) == m_values_shadow_addr;
+    //     }
+    // );
+
+    // if (shadow_remove_if_result != shadow_tracking_array.end()){
+    //     shadow_tracking_array.erase(shadow_remove_if_result, shadow_tracking_array.end());
+    //     dec_cur_ocb_entries();
+    //     ocb_entries_m.unlock();
+    //     return;
+    // }
+    // auto shadow_hbm_remove_if_result = std::remove_if(
+    //     shadow_hbm_tracking_array.begin(),
+    //     shadow_hbm_tracking_array.end(),
+    //     [m_values_shadow_addr](const std::tuple<uint64_t, uint64_t>& t) {
+    //         return std::get<1>(t) == m_values_shadow_addr;
+    //     }
+    // );
+
+    // if (shadow_hbm_remove_if_result == shadow_hbm_tracking_array.end()){
+    //     ocb_entries_m.unlock();
+    //     return;
+    // }
+    // else{
+    //     shadow_hbm_tracking_array.erase(shadow_hbm_remove_if_result, shadow_hbm_tracking_array.end());
+    //     dec_cur_hbm_entries();
+    //     ocb_entries_m.unlock();
+    //     return;
+    // }
 }
 
 bool check_full_ocb_entries(){
