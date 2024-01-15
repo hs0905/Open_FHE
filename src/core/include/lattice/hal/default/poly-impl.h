@@ -49,11 +49,17 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <set>
+#include <deque>
+
+void inc_copy_from_root_shadow_hbm_real();
+void inc_copy_from_inv_root_shadow_hbm_real();
 
 extern void PlainModMulScalar(uint64_t* res, const uint64_t* op1, uint64_t modulus, uint64_t scalar, size_t size);
 extern void PlainModMulEqScalar(uint64_t* op1, uint64_t modulus, uint64_t scalar, size_t size);
 
 #include "utils/custom_task.h"
+#include "utils/memory_tracking.h"
 extern WorkQueue work_queue;
 
 namespace lbcrypto {
@@ -979,6 +985,11 @@ void consumer(WorkQueue& queue) {
     std::chrono::duration<double, std::milli> elapsed_work(0.0);
 
     bool success = queue.getWork(items) ;
+
+    std::set<uint64_t> ntt_mod_set;
+    std::set<uint64_t> intt_mod_set;
+    std::deque<uint64_t> ntt_mod_deque;
+    std::deque<uint64_t> intt_mod_deque;
     
     while(success)    
     {
@@ -1247,6 +1258,15 @@ void consumer(WorkQueue& queue) {
                         uint64_t co = item->param1;
                         uint64_t ru = item->param2;
                         uint64_t modulus = item->param3;
+                        if(intt_mod_set.find(modulus) == intt_mod_set.end()){
+                            if(intt_mod_set.size() > IROOT_ENTRIES_NUM){
+                                intt_mod_set.erase(intt_mod_deque.back());
+                                intt_mod_deque.pop_back();
+                            }
+                            intt_mod_deque.push_front(modulus);
+                            intt_mod_set.insert(modulus);
+                            inc_copy_from_inv_root_shadow_hbm_real();
+                        }
 
                         ocb_entries_m.lock();
                         poly->m_values_shadow.ongoing_flag = true;
@@ -1264,6 +1284,15 @@ void consumer(WorkQueue& queue) {
                         uint64_t co = item->param1;
                         uint64_t ru = item->param2;
                         uint64_t modulus = item->param3;
+                        if(ntt_mod_set.find(modulus) == ntt_mod_set.end()){
+                            if(ntt_mod_set.size() > ROOT_ENTRIES_NUM){
+                                ntt_mod_set.erase(ntt_mod_deque.back());
+                                ntt_mod_deque.pop_back();
+                            }
+                            ntt_mod_deque.push_front(modulus);
+                            ntt_mod_set.insert(modulus);
+                            inc_copy_from_root_shadow_hbm_real();
+                        }
 
                         ocb_entries_m.lock();
                         poly->m_values_shadow.ongoing_flag = true;

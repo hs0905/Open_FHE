@@ -31,6 +31,8 @@
 uint32_t cnt_copy_from_shadow;
 uint32_t cnt_copy_from_shadow_ocb_real;
 uint32_t cnt_copy_from_shadow_hbm_real;
+uint32_t cnt_copy_from_root_shadow_hbm_real;
+uint32_t cnt_copy_from_inv_root_shadow_hbm_real;
 uint32_t cnt_copy_to_shadow;
 uint32_t cnt_copy_to_root_shadow;
 uint32_t cnt_copy_to_shadow_real;
@@ -59,6 +61,7 @@ void init_stat() {
     cnt_copy_from_shadow = 0;
     cnt_copy_from_shadow_ocb_real = 0;
     cnt_copy_from_shadow_hbm_real = 0;
+    cnt_copy_from_root_shadow_hbm_real = 0;
     cnt_copy_to_shadow = 0;
     cnt_copy_to_root_shadow = 0;
     cnt_copy_to_shadow_real = 0;
@@ -89,9 +92,11 @@ void print_stat() {
     std::cout << "           OCB --> HBM  : " << cnt_copy_from_other_shadow3<< std::endl;
     std::cout << "                   HBM  : " << cnt_copy_from_other_shadow4<< std::endl;
     std::cout << "cnt_create_shadow: " << cnt_create_shadow<< std::endl;
-    std::cout << "cnt_discard_shadow: " << cnt_discard_shadow<< std::endl;
-    std::cout << "cnt_copy_to_root_shadow: " << cnt_copy_to_root_shadow<< std::endl;
-    std::cout << "cnt_create_root_shadow: " << cnt_create_root_shadow<< std::endl;
+    // std::cout << "cnt_discard_shadow: " << cnt_discard_shadow<< std::endl;
+    // std::cout << "cnt_copy_to_root_shadow: " << cnt_copy_to_root_shadow<< std::endl;
+    // std::cout << "cnt_create_root_shadow: " << cnt_create_root_shadow<< std::endl;
+    std::cout << "root copy: " << cnt_copy_from_root_shadow_hbm_real << std::endl;
+    std::cout << "inv root copy: " << cnt_copy_from_inv_root_shadow_hbm_real << std::endl;
     std::cout << "cnt_compute_implemented: " << cnt_compute_implemented<< std::endl;
 
     work_queue.finish();
@@ -114,6 +119,12 @@ void inc_copy_from_shadow_ocb_real()    {
 }
 void inc_copy_from_shadow_hbm_real()    {
     cnt_copy_from_shadow_hbm_real++;
+}
+void inc_copy_from_root_shadow_hbm_real()    {
+    cnt_copy_from_root_shadow_hbm_real++;
+}
+void inc_copy_from_inv_root_shadow_hbm_real()    {
+    cnt_copy_from_inv_root_shadow_hbm_real++;
 }
 void inc_copy_to_shadow()   {
     cnt_copy_to_shadow++;
