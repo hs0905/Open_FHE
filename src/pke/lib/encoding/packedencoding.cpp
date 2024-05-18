@@ -238,11 +238,11 @@ void PackedEncoding::SetParams(usint m, EncodingParams params) {
     // initialize the CRT coefficients if not initialized
     try {
         if (IsPowerOfTwo(m)) {
-#pragma omp critical
+// #pragma omp critical
             { SetParams_2n(m, params); }
         }
         else {
-#pragma omp critical
+// #pragma omp critical
             {
                 const ModulusM modulusM = {modulusNI, m};
                 // Arbitrary: Bluestein based CRT Arb. So we need the 2mth root of unity

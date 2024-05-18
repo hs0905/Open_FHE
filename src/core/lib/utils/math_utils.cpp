@@ -21,8 +21,6 @@
 #include <vector>
 
 #include <iostream>
-// #include "math/hal/basicint.h"
-
 #include <thread>
 
 #include "utils/custom_task.h"
@@ -50,7 +48,7 @@ uint32_t cnt_compute_not_implemented;
 WorkQueue work_queue;
 std::thread consumerThread;
 
-void initialize_memory_tracking();
+extern std::unordered_set<uint64_t> evk_set;
 
 namespace lbcrypto{
 extern  void consumer(WorkQueue& queue);
@@ -76,8 +74,27 @@ void init_stat() {
     cnt_compute_implemented = 0;
     cnt_compute_not_implemented = 0;
 
-    initialize_memory_tracking();
     consumerThread = std::thread(lbcrypto::consumer, std::ref(work_queue));
+}
+void init_stat_no_workqueue() {
+    std::cout << "init_stat" << std::endl;
+    cnt_copy_from_shadow = 0;
+    cnt_copy_from_shadow_ocb_real = 0;
+    cnt_copy_from_shadow_hbm_real = 0;
+    cnt_copy_from_root_shadow_hbm_real = 0;
+    cnt_copy_to_shadow = 0;
+    cnt_copy_to_root_shadow = 0;
+    cnt_copy_to_shadow_real = 0;
+    cnt_copy_from_other_shadow = 0;
+    cnt_copy_from_other_shadow1 = 0;
+    cnt_copy_from_other_shadow2 = 0;
+    cnt_copy_from_other_shadow3 = 0;
+    cnt_copy_from_other_shadow4 = 0;
+    cnt_create_shadow = 0;
+    cnt_discard_shadow = 0;
+    cnt_create_root_shadow = 0;
+    cnt_compute_implemented = 0;
+    cnt_compute_not_implemented = 0;
 }
 void print_stat() {
     std::cout << "print_stat" << std::endl;
@@ -90,14 +107,14 @@ void print_stat() {
     std::cout << "           OCB          : " << cnt_copy_from_other_shadow1<< std::endl;
     std::cout << "           OCB <-- HBM  : " << cnt_copy_from_other_shadow2<< std::endl;
     std::cout << "           OCB --> HBM  : " << cnt_copy_from_other_shadow3<< std::endl;
+    std::cout << "  total    OCB --- HBM  : " << cnt_copy_from_other_shadow2+cnt_copy_from_other_shadow3<< std::endl;
     std::cout << "                   HBM  : " << cnt_copy_from_other_shadow4<< std::endl;
     std::cout << "cnt_create_shadow: " << cnt_create_shadow<< std::endl;
-    // std::cout << "cnt_discard_shadow: " << cnt_discard_shadow<< std::endl;
-    // std::cout << "cnt_copy_to_root_shadow: " << cnt_copy_to_root_shadow<< std::endl;
-    // std::cout << "cnt_create_root_shadow: " << cnt_create_root_shadow<< std::endl;
     std::cout << "root copy: " << cnt_copy_from_root_shadow_hbm_real << std::endl;
     std::cout << "inv root copy: " << cnt_copy_from_inv_root_shadow_hbm_real << std::endl;
     std::cout << "cnt_compute_implemented: " << cnt_compute_implemented<< std::endl;
+
+    std::cout << "initialized evk_set size: " << evk_set.size() << std::endl;
 
     work_queue.finish();
 
@@ -168,7 +185,7 @@ void inc_compute_implemented()    {
 
 
 ////////////////////////////////////////////////////////////
-// make 192bit barrett parameter
+// make 192bit barrett parameter (SEAL-Like)
 #define SEAL_MSB_INDEX_UINT64(result, value)                                 \
     {                                                                        \
         *result = 63UL - static_cast<unsigned long>(__builtin_clzll(value)); \

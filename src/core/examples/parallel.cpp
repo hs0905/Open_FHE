@@ -108,7 +108,7 @@ int main(int argc, char* argv[]) {
 
     int nthreads, tid;
 // determine how many threads we will have.
-#pragma omp parallel private(nthreads, tid)
+// #pragma omp parallel private(nthreads, tid)
     {
         /* Obtain thread number */
         tid = omp_get_thread_num();
@@ -141,7 +141,7 @@ int main(int argc, char* argv[]) {
 
     // define a parallel loop that takes 10 milliseconds to execute then performs
     // a small task of filling in an array
-#pragma omp parallel for
+// #pragma omp parallel for
     for (size_t i = 0; i < array_size; ++i) {
         float tmp = i;
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -166,7 +166,7 @@ int main(int argc, char* argv[]) {
     TIC(t_total);  // reset the timer.
                    // define a parallel loop that takes 10 milliseconds to execute then performs
                    // a small task of filling in an array
-#pragma omp parallel for
+// #pragma omp parallel for
     for (size_t i = 0; i < array_size; ++i) {
         float tmp = i;
         foo[i]    = tmp;

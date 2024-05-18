@@ -92,7 +92,7 @@ public:
         int tid      = 1;
             // Fork a team of threads giving them their own copies of variables
             // so we can see how many threads we have to work with
-    #pragma omp parallel private(tid)
+    // #pragma omp parallel private(tid)
         {
             /* Obtain thread number */
             tid = omp_get_thread_num();

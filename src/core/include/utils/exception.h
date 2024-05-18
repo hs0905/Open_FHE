@@ -80,7 +80,7 @@ public:
 // To use this, declare an instance of the object before the critical
 // region/thread, catch exceptions in thread with CaptureException, then after
 // the region call object.Rethrow()
-// #pragma omp parallel for
+// // #pragma omp parallel for
 // for (unsigned i = 0; i < rv.size(); i++) try {
 //     rv.polys[i] = (polys[i].*f)();
 //   } catch (...) {
@@ -90,7 +90,7 @@ public:
 //
 // // use of Run looks like:
 // ThreadException e;
-// #pragma omp parallel for
+// // #pragma omp parallel for
 // for (int i = 0; i < n; i++) {
 //   e.Run([=] {
 //     // code that might throw

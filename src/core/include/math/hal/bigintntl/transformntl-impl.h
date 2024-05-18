@@ -707,7 +707,7 @@ void ChineseRemainderTransformFTTNtl<VecType>::PreCompute(const IntType& rootOfU
 
     auto mapSearch = m_rootOfUnityReverseTableByModulus.find(modulus);
     if (mapSearch == m_rootOfUnityReverseTableByModulus.end() || mapSearch->second.GetLength() != CycloOrderHf) {
-#pragma omp critical
+// #pragma omp critical
         {
             IntType x(1), xinv(1);
             usint msb  = lbcrypto::GetMSB64(CycloOrderHf - 1);
@@ -1097,7 +1097,7 @@ VecType ChineseRemainderTransformArbNtl<VecType>::ForwardTransform(const VecType
     const ModulusRoot<IntType> nttModulusRoot      = {nttModulus, nttRoot};
     const ModulusRootPair<IntType> modulusRootPair = {modulusRoot, nttModulusRoot};
 
-#pragma omp critical
+// #pragma omp critical
     {
         if (BluesteinFFTNtl<VecType>::m_rootOfUnityTableByModulusRoot[nttModulusRoot].GetLength() == 0) {
             BluesteinFFTNtl<VecType>().PreComputeRootTableForNTT(cycloOrder, nttModulusRoot);
@@ -1136,7 +1136,7 @@ VecType ChineseRemainderTransformArbNtl<VecType>::InverseTransform(const VecType
     const ModulusRoot<IntType> nttModulusRoot      = {nttModulus, nttRoot};
     const ModulusRootPair<IntType> modulusRootPair = {modulusRootInverse, nttModulusRoot};
 
-#pragma omp critical
+// #pragma omp critical
     {
         if (BluesteinFFTNtl<VecType>::m_rootOfUnityTableByModulusRoot[nttModulusRoot].GetLength() == 0) {
             BluesteinFFTNtl<VecType>().PreComputeRootTableForNTT(cycloOrder, nttModulusRoot);

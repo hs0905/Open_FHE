@@ -50,7 +50,7 @@ RingGSWACCKey RingGSWAccumulatorLMKCDEY::KeyGenAcc(const std::shared_ptr<RingGSW
     // allocates (n - w) more memory for pointer (not critical for performance)
     RingGSWACCKey ek = std::make_shared<RingGSWACCKeyImpl>(1, 2, n);
 
-#pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(n))
+// #pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(n))
     for (size_t i = 0; i < n; ++i) {
         auto s{sv[i].ConvertToInt<int32_t>()};
         (*ek)[0][0][i] = KeyGenLMKCDEY(params, skNTT, s > modHalf ? s - mod : s);
@@ -61,7 +61,7 @@ RingGSWACCKey RingGSWAccumulatorLMKCDEY::KeyGenAcc(const std::shared_ptr<RingGSW
     (*ek)[0][1][0] = KeyGenAuto(params, skNTT, 2 * N - gen.ConvertToInt());
 
     // m_window: window size, consider parameterization in the future
-#pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(numAutoKeys))
+// #pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(numAutoKeys))
     for (uint32_t i = 1; i <= numAutoKeys; ++i)
         (*ek)[0][1][i] = KeyGenAuto(params, skNTT, gen.ModExp(i, 2 * N).ConvertToInt<LWEPlaintext>());
     return ek;
@@ -241,7 +241,7 @@ void RingGSWAccumulatorLMKCDEY::AddToAccLMKCDEY(const std::shared_ptr<RingGSWCry
     SignedDigitDecompose(params, ct, dct);
 
     // calls digitsG2 NTTs
-#pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(digitsG2))
+// #pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(digitsG2))
     for (uint32_t d = 0; d < digitsG2; ++d)
         dct[d].SetFormat(Format::EVALUATION);
 
@@ -276,7 +276,7 @@ void RingGSWAccumulatorLMKCDEY::Automorphism(const std::shared_ptr<RingGSWCrypto
 
     SignedDigitDecompose(params, cta, dcta);
 
-#pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(digitsG))
+// #pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(digitsG))
     for (uint32_t d = 0; d < digitsG; ++d)
         dcta[d].SetFormat(Format::EVALUATION);
 

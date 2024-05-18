@@ -3,13 +3,35 @@
 uint32_t cnt_cur_ocb_entries = 0;
 uint32_t cnt_cur_hbm_entries = 0;
 std::mutex ocb_entries_m;
+/*  This is memory tracking structure.
+    For performance, information about the shadow buffer is stored in deque and unordered maps.
+    Origin memory address, shadow memory address,ongoing flag are
+    in deque 'shadow_tracking_array' 'shadow_hbm_tracking_array'.
+    The map was used for washing for performance,
+    and it is possible to find where a particular buffer is in the memory tracking structure at once.
+*/
 std::deque<std::tuple<uint64_t,uint64_t,bool*>> shadow_tracking_array;
 std::deque<std::tuple<uint64_t,uint64_t>> shadow_hbm_tracking_array;
 std::unordered_map<uint64_t,std::deque<std::tuple<uint64_t,uint64_t,bool*>>::iterator> shadow_tracking_map;
 std::unordered_map<uint64_t,std::deque<std::tuple<uint64_t,uint64_t>>::iterator> shadow_hbm_tracking_map;
 bool false_flag = false;
+std::unordered_set<uint64_t> evk_set;
 
+bool check_evk_set(uint64_t evk_addr){
+    if(evk_set.find(evk_addr) == evk_set.end()){
+        return false;
+    }
+    else{
+        std::cout << "evk b vector" << std::endl;
+        return true;
+    }
+}
 
+void insert_evk_set(uint64_t evk_addr){
+    evk_set.insert(evk_addr);
+}
+
+/* print hardware configuration stat */
 void print_memory_stat(){
     std::cout << "print_memroy_stat" << std::endl;
     std::cout << "FPGA_N: " << FPGA_N<< std::endl;
@@ -25,66 +47,38 @@ void print_memory_stat(){
     std::cout << "cnt_cur_hbm_entries: " << cnt_cur_hbm_entries<< std::endl;
 }
 
-void initialize_memory_tracking(){
-    // for(size_t i=0; i<OCB_ENTRIES_NUM; i++){
-    //     shadow_tracking_array.push_front(std::make_tuple(0,0,&false_flag));
-    //     cnt_cur_ocb_entries = OCB_ENTRIES_NUM;
-    // }
-    
-    // for(size_t i=0; i<HBM_ENTRIES_NUM; i++){
-    //     shadow_hbm_tracking_array.push_front(std::make_tuple(0,0));
-    //     cnt_cur_hbm_entries = cnt_cur_hbm_entries;
-    // }
-}
-
+/* increase current on-chip buffer entry number */
 void inc_cur_ocb_entries(){
     cnt_cur_ocb_entries++;
 }
-
+/* decrease current on-chip buffer entry number */
 void dec_cur_ocb_entries(){
     cnt_cur_ocb_entries--;
 }
-
+/* increase current HBM entry number */
 void inc_cur_hbm_entries(){
     cnt_cur_hbm_entries++;
 }
-
+/* decrease current HBM entry number */
 void dec_cur_hbm_entries(){
     cnt_cur_hbm_entries--;
 }
 
-void print_shadow_tracking_array(){
-    std::cout << "----------array------------" << std::endl;
-    for(const auto& entry : shadow_tracking_array){
-        std::cout << std::get<1>(entry) << " ";
-    }
-    std::cout << std::endl;
-    std::cout << "---------------------------" << std::endl;
-}
-
-void print_shadow_tracking_map(){
-    std::cout << "----------map------------" << std::endl;
-    for(const auto& entry : shadow_tracking_map){
-        std::cout << entry.first << " ";
-    }
-    std::cout << std::endl;
-    std::cout << "---------------------------" << std::endl;
-
-}
-
+/* Enter information in the memory tracking structure when the shadow is newly created */
 void insert_shadow_tracking_array(uint64_t m_values_addr, uint64_t m_values_shadow_addr, bool &ongoing_flag){
     shadow_tracking_array.push_front(std::make_tuple(m_values_addr,m_values_shadow_addr,&ongoing_flag));
     shadow_tracking_map[m_values_shadow_addr] = shadow_tracking_array.begin();
 
     inc_cur_ocb_entries();
 }
-
 void insert_shadow_hbm_tracking_array(uint64_t m_values_addr, uint64_t m_values_shadow_addr){
     shadow_hbm_tracking_array.push_front(std::make_tuple(m_values_addr,m_values_shadow_addr));
     shadow_hbm_tracking_map[m_values_shadow_addr] = shadow_hbm_tracking_array.begin();
     inc_cur_hbm_entries();
 }
 
+/* for 'discard_shadow' fucntion, when on-chip-buffer is full,
+    choose victim (FIFO Rule) */
 std::tuple<uint64_t,uint64_t,bool*> evict_shadow_tracking_array(){
     auto tmp = shadow_tracking_array.back();
 
@@ -97,7 +91,7 @@ std::tuple<uint64_t,uint64_t,bool*> evict_shadow_tracking_array(){
         tmp = shadow_tracking_array.back();
     }
     auto it = shadow_tracking_map.find(std::get<1>(tmp));
-    if(it == shadow_tracking_map.end()){
+    if(it == shadow_tracking_map.end()){ // for debugging
         printf("wrong evict_shadow_tracking_array\n");
         while(1){
             usleep(1000);
@@ -109,7 +103,8 @@ std::tuple<uint64_t,uint64_t,bool*> evict_shadow_tracking_array(){
     dec_cur_ocb_entries();
     return tmp;
 }
-
+/* for 'discard_shadow' fucntion, HBM is full,
+    choose victim (FIFO Rule) */
 std::tuple<uint64_t,uint64_t> evict_shadow_hbm_tracking_array(){
     auto tmp = shadow_hbm_tracking_array.back();
     while(std::get<1>(tmp) == 0){
@@ -117,7 +112,7 @@ std::tuple<uint64_t,uint64_t> evict_shadow_hbm_tracking_array(){
         tmp = shadow_hbm_tracking_array.back();
     }
     auto it = shadow_hbm_tracking_map.find(std::get<1>(tmp));
-    if(it == shadow_hbm_tracking_map.end()){
+    if(it == shadow_hbm_tracking_map.end()){ // for debugging
         printf("wrong evict_shadow_hbm_tracking_array\n");
         while(1){
             usleep(1000);
@@ -129,6 +124,7 @@ std::tuple<uint64_t,uint64_t> evict_shadow_hbm_tracking_array(){
     return tmp;
 }
 
+/* not use */
 std::tuple<uint64_t,uint64_t,bool*> select_shadow_tracking_array(uint64_t m_values_shadow_addr){
     auto it = shadow_tracking_map.find(m_values_shadow_addr);
     if(it == shadow_tracking_map.end()) std::cout << "wrong select_shadow_tracking_array" << std::endl;
@@ -139,6 +135,8 @@ std::tuple<uint64_t,uint64_t,bool*> select_shadow_tracking_array(uint64_t m_valu
     return tmp;
 }
 
+/* for copy_to_shadow function, when shadow buffer in HBM
+    we need to find shadow buffer information in memory tracking structure */
 std::tuple<uint64_t,uint64_t> select_shadow_hbm_tracking_array(uint64_t m_values_shadow_addr){
     auto it = shadow_hbm_tracking_map.find(m_values_shadow_addr);
     if(it == shadow_hbm_tracking_map.end()) std::cout << "wrong select_shadow_hbm_tracking_array" << std::endl;
@@ -149,6 +147,9 @@ std::tuple<uint64_t,uint64_t> select_shadow_hbm_tracking_array(uint64_t m_values
     return tmp;
 }
 
+/* Openfhe automatically releases memory because it uses smart pointers.
+    Therefore, when the memory for the polynomial is released,
+    Remove the memory information from the memory tracking data structure */
 void clean_shadow_tracking_array(uint64_t m_values_shadow_addr){
     ocb_entries_m.lock();
     auto it = shadow_tracking_map.find(m_values_shadow_addr);
@@ -172,6 +173,7 @@ void clean_shadow_tracking_array(uint64_t m_values_shadow_addr){
     return;
 }
 
+/* for checking that the on-chip buffer is full */
 bool check_full_ocb_entries(){
     if(cnt_cur_ocb_entries >= OCB_ENTRIES_NUM){
         return true;
@@ -181,6 +183,7 @@ bool check_full_ocb_entries(){
     }
 }
 
+/* for checking that the HBM is full */
 bool check_full_hbm_entries(){
     if(cnt_cur_hbm_entries >= HBM_ENTRIES_NUM){
         return true;

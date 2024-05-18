@@ -396,7 +396,7 @@ std::shared_ptr<std::map<usint, EvalKey<Element>>> LeveledSHEBase<Element>::Eval
     auto evalKeys = std::make_shared<std::map<usint, EvalKey<Element>>>();
 
     // TODO pragma omp currently gives concurrent error
-    // #pragma omp parallel for if (indexList.size() >= 4)
+    // // #pragma omp parallel for if (indexList.size() >= 4)
     for (usint i = 0; i < indexList.size(); i++) {
         PrivateKey<Element> privateKeyPermuted = std::make_shared<PrivateKeyImpl<Element>>(cc);
 

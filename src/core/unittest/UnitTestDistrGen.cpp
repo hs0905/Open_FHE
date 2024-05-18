@@ -253,7 +253,7 @@ void testParallelDiscreteUniformGenerator(typename V::Integer& modulus, std::str
 
     OPENFHE_DEBUG_FLAG(false);
     std::vector<typename V::Integer> randBigVector;
-    #pragma omp parallel  // this is executed in parallel
+    // #pragma omp parallel  // this is executed in parallel
     {
         // private copies of our vector
         std::vector<typename V::Integer> randBigVectorPvt;
@@ -261,16 +261,16 @@ void testParallelDiscreteUniformGenerator(typename V::Integer& modulus, std::str
 
         distrUniGen.SetModulus(modulus);
         // build the vectors in parallel
-    #pragma omp for nowait schedule(static)
+    // #pragma omp for nowait schedule(static)
         for (usint i = 0; i < size; i++) {
             // build private copies in parallel
             randBigVectorPvt.push_back(distrUniGen.GenerateInteger());
         }
 
-    #pragma omp for schedule(static) ordered
+    // #pragma omp for schedule(static) ordered
         // now stitch them back together sequentially to preserve order of i
         for (int i = 0; i < omp_get_num_threads(); i++) {
-    #pragma omp ordered
+    // #pragma omp ordered
             {
                 OPENFHE_DEBUG("thread #" << omp_get_thread_num() << " moving " << (int)randBigVectorPvt.size()
                                          << " to starting point " << (int)randBigVector.size());
@@ -493,23 +493,23 @@ void ParallelDiscreteGaussianGenerator_VERY_LONG(const std::string& msg) {
 
         std::vector<int32_t> dggCharVector;
 
-    #pragma omp parallel  // this is executed in parallel
+    // #pragma omp parallel  // this is executed in parallel
         {
             // private copies of our vector
             std::vector<int32_t> dggCharVectorPvt;
             auto dgg = DiscreteGaussianGeneratorImpl<V>(stdev);
 
             // build the vectors in parallel
-    #pragma omp for nowait schedule(static)
+    // #pragma omp for nowait schedule(static)
             for (usint i = 0; i < size; i++) {
                 // build private copies in parallel
                 dggCharVectorPvt.push_back(dgg.GenerateInt());
             }
 
-    #pragma omp for schedule(static) ordered
+    // #pragma omp for schedule(static) ordered
             // now stitch them back together sequentially to preserve order of i
             for (int i = 0; i < omp_get_num_threads(); i++) {
-    #pragma omp ordered
+    // #pragma omp ordered
                 {
                     OPENFHE_DEBUG("thread #" << omp_get_thread_num() << " "
                                              << "moving " << (int)dggCharVectorPvt.size() << " to starting point"
@@ -537,23 +537,23 @@ void ParallelDiscreteGaussianGenerator_VERY_LONG(const std::string& msg) {
         typename V::Integer modulusByTwo(modulus.DividedBy(2));
 
         std::vector<typename V::Integer> dggBigVector;
-    #pragma omp parallel  // this is executed in parallel
+    // #pragma omp parallel  // this is executed in parallel
         {
             // private copies of our vector
             std::vector<typename V::Integer> dggBigVectorPvt;
             auto dgg = DiscreteGaussianGeneratorImpl<V>(stdev);
 
             // build the vectors in parallel
-    #pragma omp for nowait schedule(static)
+    // #pragma omp for nowait schedule(static)
             for (usint i = 0; i < size; i++) {
                 // build private copies in parallel
                 dggBigVectorPvt.push_back(dgg.GenerateInteger(modulus));
             }
 
-    #pragma omp for schedule(static) ordered
+    // #pragma omp for schedule(static) ordered
             // now stitch them back together sequentially to preserve order of i
             for (int i = 0; i < omp_get_num_threads(); i++) {
-    #pragma omp ordered
+    // #pragma omp ordered
                 {
                     OPENFHE_DEBUG("thread #" << omp_get_thread_num() << " "
                                              << "moving " << (int)dggBigVectorPvt.size() << " to starting point"

@@ -52,14 +52,18 @@
 #include <set>
 #include <deque>
 
+/* function for recording memory transfer stats (utils/math_utils.cpp)*/
 void inc_copy_from_root_shadow_hbm_real();
 void inc_copy_from_inv_root_shadow_hbm_real();
 
+/* function for fhe unit operation (utils/math_utils.cpp)*/
+extern void PlainModMul(uint64_t* op1, const uint64_t* op2, uint64_t modulus, size_t size);
 extern void PlainModMulScalar(uint64_t* res, const uint64_t* op1, uint64_t modulus, uint64_t scalar, size_t size);
 extern void PlainModMulEqScalar(uint64_t* op1, uint64_t modulus, uint64_t scalar, size_t size);
 
 #include "utils/custom_task.h"
 #include "utils/memory_tracking.h"
+#include "utils/logger.h"
 extern WorkQueue work_queue;
 
 namespace lbcrypto {
@@ -101,6 +105,8 @@ PolyImpl<VecType>::PolyImpl(const TugType& tug, const std::shared_ptr<PolyImpl::
     PolyImpl<VecType>::SetFormat(format);
 }
 
+/* Similar with PolyImpl(const PolyType& p)
+    copy polynomial rhs -> this */
 template <typename VecType>
 PolyImpl<VecType>& PolyImpl<VecType>::operator=(const PolyImpl& rhs) noexcept {
     m_format = rhs.m_format;
@@ -296,10 +302,8 @@ PolyImpl<VecType> PolyImpl<VecType>::Plus(const typename VecType::Integer& eleme
     this->copy_from_shadow();
     if (m_format == Format::COEFFICIENT)
         tmp.SetValues((*m_values).ModAddAtIndex(0, element), m_format);
-        // tmp.SetValuesShadow((*m_values_shadow.m_values).ModAddAtIndex(0, element), m_format);
     else
         tmp.SetValues((*m_values).ModAdd(element), m_format);
-        // tmp.SetValuesShadow((*m_values_shadow.m_values).ModAdd(element), m_format);
     inc_compute_not_implemented();
     return tmp;
 }
@@ -317,7 +321,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Plus(const typename NativeVector:
 
     work_queue.addWork(item);
 
-    delete item; // Clean up
+    delete item;
 
     return tmp;
 }
@@ -328,7 +332,6 @@ PolyImpl<VecType> PolyImpl<VecType>::Minus(const typename VecType::Integer& elem
     PolyImpl<VecType> tmp(m_params, m_format);
     this->copy_from_shadow();
     tmp.SetValues((*m_values).ModSub(element), m_format);
-    // tmp.SetValuesShadow((*m_values_shadow.m_values).ModSub(element), m_format);
     inc_compute_not_implemented();
     return tmp;
 }
@@ -345,7 +348,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Minus(const typename NativeVector
 
     work_queue.addWork(item);
 
-    delete item; // Clean up
+    delete item;
 
     return tmp;
 }
@@ -372,7 +375,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Times(const typename NativeVector
 
     work_queue.addWork(item);
     
-    delete item; // Clean up
+    delete item;
 
     return tmp;
 }
@@ -420,7 +423,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Times(NativeInteger::SignedNative
 
         work_queue.addWork(item);
         
-        delete item; // Clean up
+        delete item;
 
     }
     else {
@@ -436,7 +439,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Times(NativeInteger::SignedNative
 
         work_queue.addWork(item);
         
-        delete item; // Clean up
+        delete item;
     }
     return tmp;
 }
@@ -444,7 +447,6 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Times(NativeInteger::SignedNative
 template <typename VecType>
 PolyImpl<VecType>& PolyImpl<VecType>::operator*=(const Integer& element) {
     OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
-    // m_values->ModMulEq(element);
     this->copy_from_shadow();
     m_values->ModMulEq(element);
     this->indicate_modified_orig();
@@ -461,7 +463,7 @@ PolyImpl<NativeVector>& PolyImpl<NativeVector>::operator*=(const Integer& elemen
 
     work_queue.addWork(item);
 
-    delete item; // Clean up
+    delete item;
 
     return *this;
 }
@@ -474,7 +476,6 @@ PolyImpl<VecType> PolyImpl<VecType>::Minus(const PolyImpl& rhs) const {
     this->copy_from_shadow(); 
     rhs.copy_from_shadow(); 
     tmp.SetValues((*m_values).ModSub(*rhs.m_values), m_format);
-    // tmp.SetValuesShadow((*m_values_shadow.m_values).ModSub(*rhs.m_values_shadow.m_values), m_format);
     inc_compute_not_implemented();
     return tmp;
 }
@@ -491,7 +492,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Minus(const PolyImpl& rhs) const 
 
     work_queue.addWork(item);
     
-    delete item; // Clean up
+    delete item;
 
     return tmp;
 }
@@ -542,7 +543,7 @@ PolyImpl<NativeVector>& PolyImpl<NativeVector>::operator+=(const PolyImpl& eleme
     item->poly2 = (void*)&element;
     work_queue.addWork(item);
     
-    delete item; // Clean up
+    delete item;
    
     return *this;
 }
@@ -569,7 +570,7 @@ PolyImpl<NativeVector>& PolyImpl<NativeVector>::operator-=(const PolyImpl& eleme
     item->poly2 = (void*)&element;
     work_queue.addWork(item);
     
-    delete item; // Clean up
+    delete item;
 
     return *this;
 }
@@ -650,8 +651,6 @@ PolyImpl<VecType> PolyImpl<VecType>::AutomorphismTransform(uint32_t k, const std
         OPENFHE_THROW(math_error, "Automorphism index not odd\n");
     PolyImpl<VecType> tmp(m_params, m_format, true);
     uint32_t n = m_params->GetRingDimension();
-    // for (uint32_t j = 0; j < n; ++j)
-    //     (*tmp.m_values)[j] = (*m_values)[precomp[j]];
     this->copy_from_shadow();
     tmp.copy_from_shadow();
     for (uint32_t j = 0; j < n; ++j)
@@ -678,7 +677,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::AutomorphismTransform(uint32_t k,
     item->param1 = n;
     work_queue.addWork(item);
     
-    delete item; // Clean up
+    delete item;
 
     return tmp;
 }
@@ -742,7 +741,7 @@ void PolyImpl<NativeVector>::SwitchModulus(const Integer& modulus, const Integer
     item->param4 = nm;
     work_queue.addWork(item);
     
-    delete item; // Clean up
+    delete item;
 
     auto c{m_params->GetCyclotomicOrder()};
     m_params = std::make_shared<PolyImpl::Params>(c, modulus, rootOfUnity, modulusArb, rootOfUnityArb);
@@ -766,7 +765,6 @@ void PolyImpl<VecType>::SwitchFormat() {
 
     if (m_format != Format::COEFFICIENT) {
         m_format = Format::COEFFICIENT;
-        // ChineseRemainderTransformFTT<VecType>().InverseTransformFromBitReverseInPlace(ru, co, &(*m_values));
         ChineseRemainderTransformFTT<VecType>().InverseTransformFromBitReverseInPlace(ru, co, &(*m_values));
         this->indicate_modified_orig();
         return;
@@ -799,7 +797,7 @@ void PolyImpl<NativeVector>::SwitchFormat() {
         item->param3 = m_params->GetModulus().m_value;
         work_queue.addWork(item);
         
-        delete item; // Clean up
+        delete item;
 
         return;
     }
@@ -814,7 +812,7 @@ void PolyImpl<NativeVector>::SwitchFormat() {
     item->param3 = m_params->GetModulus().m_value;
     work_queue.addWork(item);
     
-    delete item; // Clean up
+    delete item;
 }
 
 template <typename VecType>
@@ -972,6 +970,12 @@ inline PolyImpl<NativeVector> PolyImpl<NativeVector>::ToNativePoly() const {
     return *this;
 }
 
+/* Below is the 'consumer part' that handles tasks that were put into the working queue
+    in the previous unit operation code part.
+    Always check whether a task is in the working queue, and if it is,
+    take it out of the queue one by one and perform the operation.
+    The implementation of the unit operation is in the lower part and poly-impl.cpp.
+*/
 #include <chrono>
 
 void consumer(WorkQueue& queue) {
@@ -985,6 +989,10 @@ void consumer(WorkQueue& queue) {
     std::chrono::duration<double, std::milli> elapsed_work(0.0);
 
     bool success = queue.getWork(items) ;
+
+    Logger logger("log.csv");
+    logger.logFunctionStart("exampleFunction");
+    logger.logFunctionEnd();
 
     std::set<uint64_t> ntt_mod_set;
     std::set<uint64_t> intt_mod_set;
@@ -1013,7 +1021,7 @@ void consumer(WorkQueue& queue) {
                         PlainModMulEqScalar(
                             poly->m_values_shadow.get_ptr(),
                             poly->m_params->GetModulus().m_value,
-                            item->param1, //element.m_value,
+                            item->param1,
                             poly->m_values_shadow.m_values->size()
                         );    
 
@@ -1152,8 +1160,6 @@ void consumer(WorkQueue& queue) {
                             uint64_t sum = op1[i] + op2[i];
                             op1[i] = sum >= modulus ? sum - modulus : sum;
                         }
-
-                        // m_values->ModAddEq(*element.m_values);
                         
                         poly->indicate_modified_shadow();
                         ocb_entries_m.lock();
@@ -1176,7 +1182,6 @@ void consumer(WorkQueue& queue) {
                         const uint64_t* op2 = poly2->m_values_shadow.get_ptr();
                         uint64_t modulus = poly->m_params->GetModulus().m_value;
 
-                        // m_values->ModSubEq(*element.m_values); // replace
                         unsigned long long temp_result;
                         for(size_t i=0; i<poly->m_values_shadow.m_values->size(); i++){
                             temp_result = op1[i] - op2[i];
@@ -1258,6 +1263,9 @@ void consumer(WorkQueue& queue) {
                         uint64_t co = item->param1;
                         uint64_t ru = item->param2;
                         uint64_t modulus = item->param3;
+                        /* We basically calculate the data transfer of the root table
+                            because custom_task.h allows us to operate operations with the same modulus(p) at the same time.
+                            If the modulus previously calculated is different, data transfer to the root table occurs.*/
                         if(intt_mod_set.find(modulus) == intt_mod_set.end()){
                             if(intt_mod_set.size() > IROOT_ENTRIES_NUM){
                                 intt_mod_set.erase(intt_mod_deque.back());
@@ -1284,6 +1292,9 @@ void consumer(WorkQueue& queue) {
                         uint64_t co = item->param1;
                         uint64_t ru = item->param2;
                         uint64_t modulus = item->param3;
+                        /* We basically calculate the data transfer of the root table
+                            because custom_task.h allows us to operate operations with the same modulus(p) at the same time.
+                            If the modulus previously calculated is different, data transfer to the root table occurs.*/
                         if(ntt_mod_set.find(modulus) == ntt_mod_set.end()){
                             if(ntt_mod_set.size() > ROOT_ENTRIES_NUM){
                                 ntt_mod_set.erase(ntt_mod_deque.back());
@@ -1388,8 +1399,6 @@ void consumer(WorkQueue& queue) {
                 default:
                     break;
             }
-
-            // std::cout << "Processed: " << item->task_type << std::endl;
 
             // Mark as processed and notify the producer
             queue.workProcessed(item);

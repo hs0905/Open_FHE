@@ -28,10 +28,13 @@
 #include <unordered_map>
 #include <list>
 #include <iostream>
+#include <unordered_set>
 
+/* This is Hardware Configuration
+    Need to enter FPGA_N, OCB_MB(on-chip buffer size), HBM_GB */
 
 #define FPGA_N 65536
-#define OCB_MB 100 // OCB = On-Chip Buffer
+#define OCB_MB 1024 // OCB = On-Chip Buffer
 #define HBM_GB 8
 #define POLY_SIZE (8 * FPGA_N)
 #define MB_TO_BYTES 1048576 // 1 MB = 1024 * 1024 Bytes
@@ -39,5 +42,5 @@
 #define MB_TO_ENTRIES_NUM (MB_TO_BYTES / POLY_SIZE)
 #define OCB_ENTRIES_NUM (OCB_MB * MB_TO_ENTRIES_NUM)
 #define HBM_ENTRIES_NUM (HBM_GB * GB_TO_MB * MB_TO_ENTRIES_NUM)
-#define ROOT_ENTRIES_NUM 15
-#define IROOT_ENTRIES_NUM 15
+#define ROOT_ENTRIES_NUM 1
+#define IROOT_ENTRIES_NUM 1

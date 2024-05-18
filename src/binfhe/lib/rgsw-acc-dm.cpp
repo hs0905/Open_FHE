@@ -46,7 +46,7 @@ RingGSWACCKey RingGSWAccumulatorDM::KeyGenAcc(const std::shared_ptr<RingGSWCrypt
     const auto& digitsR = params->GetDigitsR();
     RingGSWACCKey ek    = std::make_shared<RingGSWACCKeyImpl>(n, baseR, digitsR.size());
 
-#pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(n))
+// #pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(n))
     for (uint32_t i = 0; i < n; ++i) {
         for (int32_t j = 1; j < baseR; ++j) {
             for (size_t k = 0; k < digitsR.size(); ++k) {
@@ -128,7 +128,7 @@ void RingGSWAccumulatorDM::AddToAccDM(const std::shared_ptr<RingGSWCryptoParams>
 
     SignedDigitDecompose(params, ct, dct);
 
-#pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(digitsG2))
+// #pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(digitsG2))
     for (uint32_t j = 0; j < digitsG2; ++j)
         dct[j].SetFormat(Format::EVALUATION);
 

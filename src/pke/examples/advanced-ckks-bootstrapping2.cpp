@@ -46,6 +46,7 @@ usint Initialize(CryptoContext<DCRTPoly>& cryptoContext, KeyPair<lbcrypto::DCRTP
 void BootstrapExample(CryptoContext<DCRTPoly> cryptoContext, KeyPair<lbcrypto::DCRTPoly> keyPair, uint32_t numSlots, usint depth);
 
 void init_stat();
+void init_stat_no_workqueue();
 void print_stat();
 void print_memory_stat();
 void set_num_prallel_jobs(uint32_t num_parallel);
@@ -61,7 +62,14 @@ int main(int argc, char* argv[]) {
 
     usint depth = Initialize(cryptoContext,keyPair,8);
 
-    set_num_prallel_jobs(4);
+    set_num_prallel_jobs(1);
+
+    init_stat_no_workqueue();
+
+    // BootstrapExample(cryptoContext, keyPair, 8, depth);
+    // BootstrapExample(cryptoContext, keyPair, 8, depth);
+    // BootstrapExample(cryptoContext, keyPair, 8, depth);
+    // BootstrapExample(cryptoContext, keyPair, 8, depth);
     
     std::thread t1(BootstrapExample, cryptoContext,keyPair,8,depth); 
     std::thread t2(BootstrapExample, cryptoContext,keyPair,8,depth); 

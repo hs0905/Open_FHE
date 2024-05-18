@@ -39,10 +39,6 @@
 
 using namespace lbcrypto;
 
-void init_stat();
-void print_stat();
-
-
 int main() {
     // Step 1: Setup CryptoContext
 
@@ -118,9 +114,6 @@ int main() {
    * PARAMETERS" in  the following reference for more details:
    * http://homomorphicencryption.org/wp-content/uploads/2018/11/HomomorphicEncryptionStandardv1.1.pdf
    */
-
-    init_stat();
-
     CCParams<CryptoContextCKKSRNS> parameters;
     parameters.SetMultiplicativeDepth(multDepth);
     parameters.SetScalingModSize(scaleModSize);
@@ -253,8 +246,6 @@ int main() {
     cc->Decrypt(keys.secretKey, cRot2, &result);
     result->SetLength(batchSize);
     std::cout << "x1 rotate by -2 = " << result << std::endl;
-
-    print_stat();
 
     return 0;
 }

@@ -43,6 +43,10 @@
 #include "scheme/ckksrns/ckksrns-cryptoparameters.h"
 #include "ciphertext.h"
 
+void insert_evk_set(uint64_t evk_addr);
+bool check_evk_set(uint64_t evk_addr);
+extern void clean_shadow_tracking_array(uint64_t m_values_shadow_addr);
+
 namespace lbcrypto {
 
 EvalKey<DCRTPoly> KeySwitchHYBRID::KeySwitchGenInternal(const PrivateKey<DCRTPoly> oldKey,
@@ -123,9 +127,14 @@ EvalKey<DCRTPoly> KeySwitchHYBRID::KeySwitchGenInternal(const PrivateKey<DCRTPol
                 b.SetElementAtIndex(i, -ai * sNewi + PModq[i] * sOldi + ns * ei);
             }
         }
-
         av[part] = a;
         bv[part] = b;
+
+        for (size_t i = 0; i < sizeQP; ++i){
+            insert_evk_set((uint64_t)&(bv[part].GetElementAtIndex(i).m_values));
+            clean_shadow_tracking_array((uint64_t)&(bv[part].GetElementAtIndex(i).m_values_shadow));
+            bv[part].GetElementAtIndex(i).m_values_shadow.shadow_location = SHADOW_ON_OCB;
+        }
     }
 
     ek->SetAVector(std::move(av));

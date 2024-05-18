@@ -374,7 +374,7 @@ void NumberTheoreticTransformNat<VecType>::ForwardTransformToBitReverseInPlace(c
 }
 
 
-
+/* SEAL-Like NTT Implemnetation */
 template <typename VecType>
 void NumberTheoreticTransformNat<VecType>::ForwardTransformToBitReverseInPlace(const uint64_t* rootOfUnityTable,
                                                                                const uint64_t* preconRootOfUnityTable,
@@ -624,7 +624,7 @@ void NumberTheoreticTransformNat<VecType>::InverseTransformFromBitReverseInPlace
     }
 }
 
-
+/* SEAL-Like iNTT Implemnetation */
 template <typename VecType>
 void NumberTheoreticTransformNat<VecType>::InverseTransformFromBitReverseInPlace(
     const uint64_t* rootOfUnityInverseTable, const uint64_t* preconRootOfUnityInverseTable, const IntType& cycloOrderInv,
@@ -909,7 +909,7 @@ void ChineseRemainderTransformFTTNat<VecType>::PreCompute(const IntType& rootOfU
 
     auto mapSearch = m_rootOfUnityReverseTableByModulus.find(modulus);
     if (mapSearch == m_rootOfUnityReverseTableByModulus.end() || mapSearch->second.GetLength() != CycloOrderHf) {
-#pragma omp critical
+// #pragma omp critical
         {
             IntType x(1), xinv(1);
             usint msb  = lbcrypto::GetMSB(CycloOrderHf - 1);
@@ -917,11 +917,12 @@ void ChineseRemainderTransformFTTNat<VecType>::PreCompute(const IntType& rootOfU
             VecType Table(CycloOrderHf, modulus);
             VecType TableI(CycloOrderHf, modulus);
             IntType rootOfUnityInverse = rootOfUnity.ModInverse(modulus);
+            /* We change SEAL-Like iRoot table strcuture */
             usint iinv;
             usint modified_iinv; // modify
             for (usint i = 0; i < CycloOrderHf; i++) {
                 iinv          = lbcrypto::ReverseBits(i, msb);
-                modified_iinv = lbcrypto::ReverseBits(i-1, msb) + 1;
+                modified_iinv = lbcrypto::ReverseBits(i-1, msb) + 1; // SEAL-Like iRoot Table
                 Table[iinv]  = x;
                 TableI[modified_iinv] = xinv; // modify
                 x.ModMulEq(rootOfUnity, modulus, mu);
@@ -930,6 +931,7 @@ void ChineseRemainderTransformFTTNat<VecType>::PreCompute(const IntType& rootOfU
             m_rootOfUnityReverseTableByModulus[modulus]        = Table;
             m_rootOfUnityInverseReverseTableByModulus[modulus] = TableI;
 
+            /* Create read-only Root table shadow */
             uint64_t* tmp_root = reinterpret_cast<uint64_t*>(&m_rootOfUnityReverseTableByModulus[modulus][0]);
             uint64_t* tmp_rootI = reinterpret_cast<uint64_t*>(&m_rootOfUnityInverseReverseTableByModulus[modulus][0]);
 
@@ -972,6 +974,8 @@ void ChineseRemainderTransformFTTNat<VecType>::PreCompute(const IntType& rootOfU
 
             m_rootOfUnityPreconReverseTableByModulus[modulus]        = preconTable;
             m_rootOfUnityInversePreconReverseTableByModulus[modulus] = preconTableI;
+
+            /* Create read-only iRoot table shadow */
 
             uint64_t* tmp_precon = reinterpret_cast<uint64_t*>(&m_rootOfUnityPreconReverseTableByModulus[modulus][0]);
             uint64_t* tmp_preconI = reinterpret_cast<uint64_t*>(&m_rootOfUnityInversePreconReverseTableByModulus[modulus][0]);
@@ -1332,7 +1336,7 @@ VecType ChineseRemainderTransformArbNat<VecType>::ForwardTransform(const VecType
     const ModulusRoot<IntType> nttModulusRoot      = {nttModulus, nttRoot};
     const ModulusRootPair<IntType> modulusRootPair = {modulusRoot, nttModulusRoot};
 
-#pragma omp critical
+// #pragma omp critical
     {
         if (BluesteinFFTNat<VecType>::m_rootOfUnityTableByModulusRoot[nttModulusRoot].GetLength() == 0) {
             BluesteinFFTNat<VecType>().PreComputeRootTableForNTT(cycloOrder, nttModulusRoot);
@@ -1371,7 +1375,7 @@ VecType ChineseRemainderTransformArbNat<VecType>::InverseTransform(const VecType
     const ModulusRoot<IntType> nttModulusRoot      = {nttModulus, nttRoot};
     const ModulusRootPair<IntType> modulusRootPair = {modulusRootInverse, nttModulusRoot};
 
-#pragma omp critical
+// #pragma omp critical
     {
         if (BluesteinFFTNat<VecType>::m_rootOfUnityTableByModulusRoot[nttModulusRoot].GetLength() == 0) {
             BluesteinFFTNat<VecType>().PreComputeRootTableForNTT(cycloOrder, nttModulusRoot);

@@ -77,7 +77,7 @@ void DiscreteFourierTransform::Reset() {
 }
 
 void DiscreteFourierTransform::Initialize(uint32_t m, uint32_t nh) {
-#pragma omp critical
+// #pragma omp critical
     // add a PrecomputedValues object to the map of precomputedValues only if it doesn't already exist for the given cyclotomic order
     if (precomputedValues.find(m) == precomputedValues.end()) {
         precomputedValues.insert({m, PrecomputedValues(m, nh)});
@@ -104,7 +104,7 @@ std::vector<std::complex<double>> DiscreteFourierTransform::FFTForwardTransform(
     static std::vector<std::vector<double>> cosTable(LOGM_MAX + 1);
     static std::vector<std::vector<double>> sinTable(LOGM_MAX + 1);
 
-#pragma omp critical
+// #pragma omp critical
     {
         if (m != cachedM[l]) {
             // if (m > maxMCached) {

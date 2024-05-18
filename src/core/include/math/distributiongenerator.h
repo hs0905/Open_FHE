@@ -79,7 +79,7 @@ public:
         if (threads == 0) {
             threads = 1;
         }
-#pragma omp parallel for num_threads(threads)
+// #pragma omp parallel for num_threads(threads)
         for (int i = 0; i < threads; ++i) {
             GetPRNG();
         }
@@ -88,7 +88,7 @@ public:
     static PRNG& GetPRNG() {
         // initialization of PRNGs
         if (m_prng == nullptr) {
-#pragma omp critical
+// #pragma omp critical
             {
 #if defined(FIXED_SEED)
                 // Only used for debugging in the single-threaded mode.
@@ -184,7 +184,7 @@ private:
 #if !defined(FIXED_SEED)
         // avoid contention on m_prng
         // local copies of m_prng are created for each thread
-    #pragma omp threadprivate(m_prng)
+    // #pragma omp threadprivate(m_prng)
 #endif
 };
 

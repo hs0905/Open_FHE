@@ -743,7 +743,7 @@ std::vector<ConstPlaintext> SWITCHCKKSRNS::EvalLTPrecomputeSwitch(
         newA[i] = std::move(vecA);
     }
 
-#pragma omp parallel for
+// #pragma omp parallel for
     for (uint32_t j = 0; j < gStep; j++) {
         int32_t offset = -static_cast<int32_t>(bStep * j);
         for (uint32_t i = 0; i < bStep; i++) {
@@ -807,7 +807,7 @@ std::vector<ConstPlaintext> SWITCHCKKSRNS::EvalLTPrecomputeSwitch(
     auto elementParamsPtr = std::make_shared<ILDCRTParams<DCRTPoly::Integer>>(M, moduli, roots);
 
     std::vector<ConstPlaintext> result(slots);
-#pragma omp parallel for
+// #pragma omp parallel for
     for (uint32_t j = 0; j < gStep; j++) {
         int32_t offset = -static_cast<int32_t>(bStep * j);
         for (uint32_t i = 0; i < bStep; i++) {
@@ -840,7 +840,7 @@ std::vector<std::vector<std::complex<double>>> EvalLTRectPrecomputeSwitch(
                                                                      A.begin() + (i + 1) * A[0].size());
     }
     std::vector<std::vector<std::complex<double>>> diags(n);
-#pragma omp parallel for
+// #pragma omp parallel for
     for (uint32_t j = 0; j < gStep; j++) {
         for (uint32_t i = 0; i < bStep; i++) {
             if (bStep * j + i < n) {
@@ -878,7 +878,7 @@ Ciphertext<DCRTPoly> SWITCHCKKSRNS::EvalLTWithPrecomputeSwitch(const CryptoConte
     std::vector<Ciphertext<DCRTPoly>> fastRotation(bStep - 1);
 
     // Hoisted automorphisms
-#pragma omp parallel for
+// #pragma omp parallel for
     for (uint32_t j = 1; j < bStep; j++)
         fastRotation[j - 1] = cc.EvalFastRotationExt(ctxt, j, digits, true);
 
@@ -979,7 +979,7 @@ Ciphertext<DCRTPoly> SWITCHCKKSRNS::EvalLTRectWithPrecomputeSwitch(
     auto elementParamsPtr2 = std::dynamic_pointer_cast<typename DCRTPoly::Params>(elementParamsPtr);
 
 // Hoisted automorphisms
-#pragma omp parallel for
+// #pragma omp parallel for
     for (uint32_t j = 1; j < bStep; j++) {
         fastRotation[j - 1] = cc.EvalFastRotationExt(ct, j, digits, true);
     }
@@ -1297,7 +1297,7 @@ std::vector<std::shared_ptr<LWECiphertextImpl>> SWITCHCKKSRNS::EvalCKKStoFHEW(Co
 
     // Step 5. Modulus switch to q in FHEW
     if (m_modulus_LWE != m_modulus_CKKS_from) {
-#pragma omp parallel for
+// #pragma omp parallel for
         for (uint32_t i = 0; i < numCtxts; i++) {
             auto original_a = LWEciphertexts[i]->GetA();
             auto original_b = LWEciphertexts[i]->GetB();
@@ -1457,7 +1457,7 @@ Ciphertext<DCRTPoly> SWITCHCKKSRNS::EvalFHEWtoCKKS(std::vector<std::shared_ptr<L
     // Combine the scale with the division by K to consume fewer levels, but careful since the value might be too small
     double prescale = (1.0 / LWECiphertexts[0]->GetModulus().ConvertToDouble()) / K;
 
-#pragma omp parallel for
+// #pragma omp parallel for
     for (uint32_t i = 0; i < numValues; i++) {
         auto a = LWECiphertexts[i]->GetA();
         A[i]   = std::vector<std::complex<double>>(a.GetLength());
@@ -1813,7 +1813,7 @@ Ciphertext<DCRTPoly> SWITCHCKKSRNS::EvalCompareSchemeSwitching(ConstCiphertext<D
     auto LWECiphertexts = EvalCKKStoFHEW(cDiff, numCtxts);
 
     std::vector<LWECiphertext> cSigns(LWECiphertexts.size());
-#pragma omp parallel for
+// #pragma omp parallel for
     for (uint32_t i = 0; i < LWECiphertexts.size(); i++) {
         cSigns[i] = m_ccLWE.EvalSign(LWECiphertexts[i], true);
     }
@@ -1865,7 +1865,7 @@ std::vector<Ciphertext<DCRTPoly>> SWITCHCKKSRNS::EvalMinSchemeSwitching(ConstCip
         // Evaluate the sign
         // We always assume for the moment that numValues is a power of 2
         std::vector<LWECiphertext> LWESign(numValues / (2 * M));
-#pragma omp parallel for
+// #pragma omp parallel for
         for (uint32_t j = 0; j < numValues / (2 * M); j++) {
             LWESign[j] = m_ccLWE.EvalSign(cTemp[j], true);
         }
@@ -1950,7 +1950,7 @@ std::vector<Ciphertext<DCRTPoly>> SWITCHCKKSRNS::EvalMinSchemeSwitchingAlt(Const
         // Evaluate the sign
         // We always assume for the moment that numValues is a power of 2
         std::vector<LWECiphertext> LWESign(numValues);
-#pragma omp parallel for
+// #pragma omp parallel for
         for (uint32_t j = 0; j < numValues / (2 * M); j++) {
             LWECiphertext tempSign    = m_ccLWE.EvalSign(cTemp[j], true);
             LWECiphertext negTempSign = std::make_shared<LWECiphertextImpl>(*tempSign);
@@ -2030,7 +2030,7 @@ std::vector<Ciphertext<DCRTPoly>> SWITCHCKKSRNS::EvalMaxSchemeSwitching(ConstCip
         // Evaluate the sign
         // We always assume for the moment that numValues is a power of 2
         std::vector<LWECiphertext> LWESign(numValues / (2 * M));
-#pragma omp parallel for
+// #pragma omp parallel for
         for (uint32_t j = 0; j < numValues / (2 * M); j++) {
             LWESign[j] = m_ccLWE.EvalSign(cTemp[j], true);
         }
@@ -2116,7 +2116,7 @@ std::vector<Ciphertext<DCRTPoly>> SWITCHCKKSRNS::EvalMaxSchemeSwitchingAlt(Const
         // Evaluate the sign
         // We always assume for the moment that numValues is a power of 2
         std::vector<LWECiphertext> LWESign(numValues);
-#pragma omp parallel for
+// #pragma omp parallel for
         for (uint32_t j = 0; j < numValues / (2 * M); j++) {
             LWECiphertext tempSign    = m_ccLWE.EvalSign(cTemp[j], true);
             LWECiphertext negTempSign = std::make_shared<LWECiphertextImpl>(*tempSign);

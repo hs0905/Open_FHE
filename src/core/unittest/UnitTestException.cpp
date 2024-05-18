@@ -49,7 +49,7 @@ static void regthrow(const std::string& msg) {
 static void parthrow(const std::string& msg) {
     // now try throw inside omp
     ThreadException e;
-#pragma omp parallel for
+// #pragma omp parallel for
     for (int i = 0; i < 10; i++) {
         try {
             if (i == 7)
@@ -65,7 +65,7 @@ static void parthrow(const std::string& msg) {
 static void runthrow(const std::string& msg) {
     // now try throw inside omp
     ThreadException e;
-#pragma omp parallel for
+// #pragma omp parallel for
     for (int i = 0; i < 10; i++) {
         e.Run([=] {
             if (i == 7)

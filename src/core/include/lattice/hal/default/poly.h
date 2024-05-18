@@ -56,6 +56,7 @@
 
 #include "utils/memory_tracking.h"
 
+/* function for recording memory transfer stats (utils/math_utils.cpp)*/
 void inc_copy_from_shadow();
 void inc_copy_from_shadow_ocb_real();
 void inc_copy_from_shadow_hbm_real();
@@ -70,6 +71,8 @@ void inc_create_shadow();
 void inc_discard_shadow();
 void inc_compute_implemented();
 void inc_compute_not_implemented();
+
+/* fucntion for managing memory tracking (for recognizing buffer locations) (utils/memory_tracking.cpp) */
 bool check_full_ocb_entries();
 bool check_full_hbm_entries();
 void insert_shadow_tracking_array(uint64_t m_values_addr, uint64_t m_values_shadow_addr, bool &ongoing_flag);
@@ -80,19 +83,27 @@ std::tuple<uint64_t,uint64_t,bool*> select_shadow_tracking_array(uint64_t m_valu
 std::tuple<uint64_t,uint64_t> select_shadow_hbm_tracking_array(uint64_t m_values_shadow_addr);
 void clean_shadow_tracking_array(uint64_t m_values_shadow_addr);
 
+bool check_evk_set(uint64_t evk_addr); 
+
+/* working queue for off-load FHE tasks */
 #include "utils/custom_task.h"
 extern WorkQueue work_queue;
-extern std::mutex ocb_entries_m;
 
-extern void PlainModMul(uint64_t* op1, const uint64_t* op2, uint64_t modulus, size_t size);
+extern std::mutex ocb_entries_m;
 
 namespace lbcrypto {
 
+/* Shadow refers to a buffer that has been transferred to hardware (FPGA)
+    not the original buffer on the host side. 
+    After checking the following shadow state, it is decided whether to move the shadow
+    or not when an arbitrary requests the corresponding polinomial. */
 #define SHADOW_NOTEXIST 0 
 #define SHADOW_SYNCHED 1 
 #define SHADOW_IS_AHEAD 2
 #define SHADOW_IS_BEHIND 3
 
+/* Since shadow is assumed to be in the on-chip buffer or HBM of the FPGA or ASIC,
+    the location of the shadow should be indicated as below. */
 #define SHADOW_ON_OCB 1
 #define SHADOW_ON_HBM 2
 
@@ -101,6 +112,20 @@ namespace lbcrypto {
  * @file poly.h
  * @brief Ideal lattice using a vector representation
  */
+
+/* The class below is the polynomial's shadow (off-load buffer) class to be used for the fhe operation.
+    m_values : Polynomial data in on-chip buffer
+    m_values_hbm : Polynomial data in HBM
+    shadow_sync_state : SHADOW_NOTEXIST, SHADOW_SYNCHED,
+                        SHADOW_IS_AHEAD(need to transfer Host <- Shadow),
+                        SHADOW_IS_BEHIND (need to transfer Host -> Shadow)
+    shadow_location : SHADOW_ON_OCB, SHADOW_ON_HBM
+    ongoing_flag : Flag that indicate whether the polinomial is currently being used for fhe operation.
+                   To prevent memory from being moved by the evict policy when it is being used for fhe operation.
+    get_ptr : Method to get a on-chip shadow address
+    get_hbm_ptr : Method to get a HBM shadow address
+*/
+
 template <typename VecType>
 class ShadowType {
     public:
@@ -130,10 +155,17 @@ public:
 
     constexpr PolyImpl() = default;
 
+    /* Openfhe automatically releases memory because it uses smart pointers.
+        Therefore, when the memory for the polynomial is released,
+        Remove the memory information from the memory tracking data structure
+        ( clean_shadow_tracking_array ) */
     ~PolyImpl() noexcept{
         clean_shadow_tracking_array((uint64_t)&m_values_shadow);
     }
 
+    /* Data trasfer : Host(Origin) <- Hardware(on-chip buffer or HBM)
+        Check the shadoww_sync_state and shadow_location
+        and transfer data to the host if you need to move the data */
     void copy_from_shadow() const {
         inc_copy_from_shadow();
         if(m_values == nullptr) {
@@ -154,6 +186,10 @@ public:
         }
     }
 
+    /* Data trasfer : Host(Origin) <- Hardware(on-chip buffer or HBM)
+        Special method for discard (evcit policy)
+        to move a specific memory discarded by an evict policy to an original buffer
+        Discarded memory initializes to its initial state */
     void copy_from_shadow_for_discard(std::unique_ptr<VecType>& tmp_m_values ,ShadowType<VecType>& tmp_m_values_shadow) const {
         if(tmp_m_values_shadow.m_values == nullptr){
             return;
@@ -175,10 +211,17 @@ public:
         }
     }
 
+    /* Data trasfer : Host(Origin) -> Hardware(on-chip buffer or HBM)
+        Check the shadoww_sync_state and shadow_location
+        and transfer data to the shadow if you need to move the data
+        It's important to note that, when the shadow is in the HBM and the on-chip buffer is full
+        we need to swap data (on-chip buffer <-> HBM)
+        select hbm shadow buffer, swap hbm shadow & victim on-chip buffer shadow
+    */
     void copy_to_shadow() const {
         inc_copy_to_shadow();
         ocb_entries_m.lock();
-        if(m_values_shadow.shadow_location==SHADOW_ON_HBM){
+        if(m_values_shadow.shadow_location==SHADOW_ON_HBM){ // When shadow in HBM, need to swap OCB <-> HBM
             std::tuple<uint64_t,uint64_t> hbm_tmp = select_shadow_hbm_tracking_array(uint64_t(&m_values_shadow));
             if(check_full_ocb_entries()){
                 std::tuple<uint64_t,uint64_t,bool*> tmp = evict_shadow_tracking_array();
@@ -211,12 +254,16 @@ public:
             create_shadow();   
         }            
         if(m_values_shadow.shadow_sync_state == SHADOW_IS_BEHIND) {   
-            inc_copy_to_shadow_real();
+            if(!check_evk_set((uint64_t)&m_values)) inc_copy_to_shadow_real();
             ::memcpy(m_values_shadow.get_ptr(),(char*)&m_values->m_data[0],sizeof(uint64_t)*m_params->GetRingDimension());
             m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
         }
     }
 
+    /* Data trasfer : Hardware(on-chip buffer(OCB) or HBM) -> Hardware(on-chip buffer or HBM)
+        OCB -> OCB, OCB -> HBM, HBM -> OCB, HBM -> HBM
+        polynomial copy operation in FHE 
+    */
     void copy_from_other_shadow(ShadowType<VecType>& other) {
         if(!m_values_shadow.m_values) {
             OPENFHE_THROW(not_available_error, "shadow not created");
@@ -227,7 +274,7 @@ public:
         else {
             inc_copy_from_other_shadow();
             if(m_values_shadow.shadow_location==SHADOW_ON_OCB && other.shadow_location==SHADOW_ON_OCB){
-                inc_copy_from_other_shadow1();
+                if(!check_evk_set((uint64_t)&m_values)) inc_copy_from_other_shadow1();
                 ::memcpy(m_values_shadow.get_ptr(),other.get_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
                 m_values_shadow.shadow_sync_state = other.shadow_sync_state;
             }
@@ -252,6 +299,9 @@ public:
         }
     }
 
+    /* Specialized method for OCB -> HBM
+        Using in copy_to_shadow, discard_shadow
+    */
     void copy_to_hbm_shadow(ShadowType<VecType>& tmp_m_values_shadow) const{
         if(!tmp_m_values_shadow.m_values) {
             return;
@@ -266,6 +316,9 @@ public:
         }
     }
 
+    /* Specialized method for HBM -> OCB
+        Using in copy_to_shadow
+    */
     void copy_from_hbm_shadow(ShadowType<VecType>& tmp_m_values_shadow) const{
         if(!tmp_m_values_shadow.m_values) {
             OPENFHE_THROW(not_available_error, "shadow not created");
@@ -277,22 +330,33 @@ public:
         }
     }
 
+    /* When the shadow class corresponding to the origin buffer(Host) is not generated,
+        it serves to allocate shadow memory.
+        By default, the created shadow is located in an on-chip buffer because it was created for use right now.
+        If the on-chip buffer is full,
+        discard_shadow is used by the evict policy to manage additional data transfers
+    */
     void create_shadow() const {
         if(m_values_shadow.m_values) return;
 
         ocb_entries_m.lock();
-        if(check_full_ocb_entries()) discard_shadow();
+        if(!check_evk_set((uint64_t)&m_values) && check_full_ocb_entries()) discard_shadow();
 
         inc_create_shadow();
         m_values_shadow.m_values = std::make_shared<std::vector<uint64_t>>(m_params->GetRingDimension());
         m_values_shadow.shadow_sync_state = SHADOW_IS_BEHIND;
         m_values_shadow.shadow_location = SHADOW_ON_OCB;
 
-        insert_shadow_tracking_array((uint64_t)&m_values,(uint64_t)&m_values_shadow,m_values_shadow.ongoing_flag);
+        if(!check_evk_set((uint64_t)&m_values)) insert_shadow_tracking_array((uint64_t)&m_values,(uint64_t)&m_values_shadow,m_values_shadow.ongoing_flag);
         ocb_entries_m.unlock();
     }
+
+    /* Discard shadow is a function created to manage situations where on-chip buffers and HBMs will be full.
+        To get the memory space required for the operation,
+        Move the buffer occupying the space to the HBM or import it back to the host according to the evict policy.
+    */
     void discard_shadow() const{        
-        if(check_full_hbm_entries()){
+        if(check_full_hbm_entries()){ // When HBM is full
             std::tuple<uint64_t,uint64_t> tmp = evict_shadow_hbm_tracking_array();
             if(std::get<0>(tmp)!=0){
                 std::unique_ptr<VecType>* tmp_m_values_addr = (std::unique_ptr<VecType>*)std::get<0>(tmp);
@@ -301,7 +365,7 @@ public:
             }
         }
         std::tuple<uint64_t,uint64_t,bool*> tmp = evict_shadow_tracking_array();
-        if(std::get<0>(tmp)!=0){
+        if(std::get<0>(tmp)!=0){ // When OCB is full
             ShadowType<VecType>* tmp_m_values_shadow_addr = (ShadowType<VecType>*)std::get<1>(tmp);
             copy_to_hbm_shadow(*tmp_m_values_shadow_addr);
             if((*tmp_m_values_shadow_addr).m_values){
@@ -310,15 +374,17 @@ public:
         }
     }
 
+    /* If polynomial data is changed by fhe operation in hardware(shadow),
+        indicate modified flag in shadow buffer */
     void indicate_modified_shadow() {        
         if( m_values_shadow.shadow_sync_state != SHADOW_NOTEXIST)
            if( m_values_shadow.m_values == nullptr ) 
                OPENFHE_THROW(not_available_error, "m_values_shadow.m_values is null");
 
-        m_values_shadow.shadow_sync_state = SHADOW_IS_AHEAD;
-        // if(m_values!= nullptr && m_values_shadow != nullptr)
-        //     *m_values = * m_values_shadow;    
+        m_values_shadow.shadow_sync_state = SHADOW_IS_AHEAD; 
     }
+    /* If polynomial data is changed by fhe operation in host(origin),
+        indicate modified flag in origin buffer */
     void indicate_modified_orig() {        
         if( m_values_shadow.shadow_sync_state != SHADOW_NOTEXIST) {
             if( m_values_shadow.m_values == nullptr ) 
@@ -328,9 +394,7 @@ public:
         else {
             if( m_values_shadow.m_values != nullptr ) 
                OPENFHE_THROW(not_available_error, "m_values_shadow.m_values is not null");
-        }
-        // if(m_values!= nullptr && m_values_shadow != nullptr)
-        //     *m_values_shadow = * m_values;    
+        }   
     }
 
 
@@ -391,6 +455,9 @@ public:
         PolyImpl<VecType>::SetFormat(format);
     }
 
+    /*Allocate temporary buffer and copy buffer operation in Openfhe
+        This information should also be recorded in the memory tracking structure
+        Create new shadow and copy the data to this shadow. */
     PolyImpl(const PolyType& p) noexcept
         : m_format{p.m_format},
           m_params{p.m_params},
@@ -506,6 +573,10 @@ public:
         return (*m_values)[i];
     }
 
+    /* From below, openfhe's unit operation is shown.
+    For the management purpose of the operation, we use the working queue,
+    so we define the information of the operation as a task and put it into the queue.
+    Other definitions of unit operation are in poly-impl.h, transformnat.h and transformnat-impl.h */
     PolyImpl Plus(const PolyImpl& rhs) const override {
         if (m_params->GetRingDimension() != rhs.m_params->GetRingDimension())
             OPENFHE_THROW(math_error, "RingDimension missmatch");
@@ -523,7 +594,7 @@ public:
 
         work_queue.addWork(item);
 
-        delete item; // Clean up
+        delete item;
 
         return tmp;
     }
@@ -538,7 +609,7 @@ public:
 
         work_queue.addWork(item);
 
-        delete item; // Clean up
+        delete item;
 
         return tmp;
     }
@@ -554,7 +625,6 @@ public:
 
     PolyImpl Minus(const Integer& element) const override;
     PolyImpl& operator-=(const Integer& element) override {
-        // m_values->ModSubEq(element);
         OPENFHE_THROW(not_implemented_error, "hcho: not tested here");
         this->copy_from_shadow();
         m_values->ModSubEq(element);
@@ -579,7 +649,7 @@ public:
 
         work_queue.addWork(item);
 
-        delete item; // Clean up
+        delete item;
 
         return tmp;
     }
@@ -594,7 +664,7 @@ public:
 
         work_queue.addWork(item);
 
-        delete item; // Clean up
+        delete item;
 
         return tmp;
     }
@@ -616,7 +686,7 @@ public:
 
         work_queue.addWork(item);
 
-        delete item; // Clean up
+        delete item;
 
         return *this;
     }

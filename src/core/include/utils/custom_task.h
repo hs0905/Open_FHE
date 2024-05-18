@@ -8,6 +8,7 @@
 #include <thread>
 #include <unistd.h>
 
+/* FHE Unit operation numbering */
 #define TASK_TYPE_PlainModMulEqScalar 1
 #define TASK_TYPE_PlusScalar 2
 #define TASK_TYPE_MinusScalar 3
