@@ -41,6 +41,7 @@ Example for CKKS bootstrapping with sparse packing
 #include <thread>
 
 using namespace lbcrypto;
+using namespace std;
 
 usint Initialize(CryptoContext<DCRTPoly>& cryptoContext, KeyPair<lbcrypto::DCRTPoly>& keyPair, uint32_t numSlots);
 void BootstrapExample(CryptoContext<DCRTPoly> cryptoContext, KeyPair<lbcrypto::DCRTPoly> keyPair, uint32_t numSlots, usint depth);
@@ -51,40 +52,173 @@ void print_stat();
 void print_memory_stat();
 void set_num_prallel_jobs(uint32_t num_parallel);
 
-int main(int argc, char* argv[]) {
-    // We run the example with 8 slots and ring dimension 4096 to illustrate how to run bootstrapping with a sparse plaintext.
-    // Using a sparse plaintext and specifying the smaller number of slots gives a performance improvement (typically up to 3x).
+int main(int argc, char* argv[]){
     init_stat();
     print_memory_stat();
+    uint32_t numSlots = 1<<14; // Fully-Packed (numSlots = (logN)/2)
 
-    CryptoContext<DCRTPoly> cryptoContext;
-    KeyPair<lbcrypto::DCRTPoly> keyPair;
+    // SEAL and bootstrapping setting (Resnet-20 Bootstrapping Setting)
+	long boundary_K = 25;
+	long boot_deg = 59;
+    long scale_factor = 2;
+    long inverse_deg = 1; 
+	long logN = 16;
+	long loge = 10; 
+	long logn = 15;		// full slots
+	long logn_1 = 14;	// sparse slots
+	long logn_2 = 13;
+	long logn_3 = 12;
+	int logp = 59;//53;//46; 46 results in math error exception.
+	int logq = 51;
+	int log_special_prime = 51;
+    int log_integer_part = logq - logp - loge + 5;
+	int remaining_level = 16; // Calculation required
 
-    usint depth = Initialize(cryptoContext,keyPair,8);
+    std::vector<uint32_t> levelBudget = {4, 4};
+	std::vector<uint32_t> bsgsDim = {0, 0};
+	SecretKeyDist secretKeyDist = UNIFORM_TERNARY;
+	int boot_level = FHECKKSRNS::GetBootstrapDepth(levelBudget, secretKeyDist) + 2;
 
-    set_num_prallel_jobs(1);
+    int total_level = remaining_level + boot_level;
+	std::cout << "boot_level: " << boot_level << std::endl;
+	std::cout << "remaining_level: " << remaining_level << std::endl;
+	std::cout << "total_level: " << total_level << std::endl;
+
+    CCParams<CryptoContextCKKSRNS> parameters;
+
+	parameters.SetSecretKeyDist(secretKeyDist);
+	parameters.SetRingDim(1<<logN);
+	parameters.SetMultiplicativeDepth(total_level);
+	parameters.SetScalingModSize(logp);
+	parameters.SetSecurityLevel(HEStd_NotSet);
+
+	uint32_t dnum = 1;
+	parameters.SetScalingTechnique(FLEXIBLEAUTO);
+	parameters.SetNumLargeDigits(dnum);
+    parameters.SetKeySwitchTechnique(HYBRID);
+
+
+	CryptoContext<DCRTPoly> cc = GenCryptoContext(parameters);
+  
+	std::cout << parameters << std::endl;
+
+	
+	// Enable the features that you wish to use
+	cc->Enable(PKE);
+	cc->Enable(KEYSWITCH);
+	cc->Enable(LEVELEDSHE);
+	cc->Enable(ADVANCEDSHE);
+	cc->Enable(FHE);
+	std::cout << "CKKS scheme is using ring dimension " << cc->GetRingDimension() << std::endl << std::endl;
+
+    auto keys = cc->KeyGen();
+    cc->EvalMultKeyGen(keys.secretKey);
+
+    //	additional rotation kinds for CNN
+	std::vector<int> rotation_kinds = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33
+		,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55
+		,56
+		,57,58,59,60,61
+		,62,63,64,66,84,124,128,132,256,512,959,960,990,991,1008
+		,1023,1024,1036,1064,1092,1952,1982,1983,2016,2044,2047,2048,2072,2078,2100,3007,3024,3040,3052,3070,3071,3072,3080,3108,4031
+		,4032,4062,4063,4095,4096,5023,5024,5054,5055,5087,5118,5119,5120,6047,6078,6079,6111,6112,6142,6143,6144,7071,7102,7103,7135
+		,7166,7167,7168,8095,8126,8127,8159,8190,8191,8192,9149,9183,9184,9213,9215,9216,10173,10207,10208,10237,10239,10240,11197,11231
+		,11232,11261,11263,11264,12221,12255,12256,12285,12287,12288,13214,13216,13246,13278,13279,13280,13310,13311,13312,14238,14240
+		,14270,14302,14303,14304,14334,14335,15262,15264,15294,15326,15327,15328,15358,15359,15360,16286,16288,16318,16350,16351,16352
+		,16382,16383,16384,17311,17375,18335,18399,18432,19359,19423,20383,20447,20480,21405,21406,21437,21469,21470,21471,21501,21504
+		,22429,22430,22461,22493,22494,22495,22525,22528,23453,23454,23485,23517,23518,23519,23549,24477,24478,24509,24541,24542,24543
+		,24573,24576,25501,25565,25568,25600,26525,26589,26592,26624,27549,27613,27616,27648,28573,28637,28640,28672,29600,29632,29664
+		,29696,30624,30656,30688,30720,31648,31680,31712,31743,31744,31774,32636,32640,32644,32672,32702,32704,32706,32735
+		,32736,32737,32759,32760,32761,32762,32763,32764,32765,32766,32767		
+	};
+
+    cout << "Adding Bootstrapping Keys..." << endl;
+	vector<int> gal_steps_vector;
+	gal_steps_vector.push_back(0);
+	for(int i=0; i<logN-1; i++) gal_steps_vector.push_back((1 << i));
+	for(auto rot: rotation_kinds)
+	{
+		if(find(gal_steps_vector.begin(), gal_steps_vector.end(), rot) == gal_steps_vector.end()) gal_steps_vector.push_back(rot);
+	} 
+
+	// cout << "EvalRotateKeyGen+" << endl;
+	// for(auto rot: gal_steps_vector)
+	// {
+	// 	vector<int> r;
+	// 	r.push_back(rot);
+	// 	cc->EvalRotateKeyGen(keys.secretKey, r);
+	// }
+	// cout << "EvalRotateKeyGen-" << endl;
+
+	cout << "EvalBootstrapSetup+" << endl;
+	cc->EvalBootstrapSetup(levelBudget, bsgsDim, numSlots);
+	// cc->EvalBootstrapSetup(levelBudget, bsgsDim, numSlots>>1);
+	// cc->EvalBootstrapSetup(levelBudget, bsgsDim, numSlots>>2);
+	cout << "EvalBootstrapSetup-" << endl;
+
+	cout << "EvalBootstrapKeyGen+" << endl;
+	cc->EvalBootstrapKeyGen(keys.secretKey, numSlots);
+	// cc->EvalBootstrapKeyGen(keys.secretKey, numSlots>>1);
+	// cc->EvalBootstrapKeyGen(keys.secretKey, numSlots>>2);
+	cout << "EvalBootstrapKeyGen-" << endl;
 
     init_stat_no_workqueue();
 
-    // BootstrapExample(cryptoContext, keyPair, 8, depth);
-    // BootstrapExample(cryptoContext, keyPair, 8, depth);
-    // BootstrapExample(cryptoContext, keyPair, 8, depth);
-    // BootstrapExample(cryptoContext, keyPair, 8, depth);
+    BootstrapExample(cc, keys, numSlots, total_level);
+    // BootstrapExample(cc, keys, numSlots>>1, total_level);
+    // BootstrapExample(cc, keys, numSlots>>2, total_level);
     
-    std::thread t1(BootstrapExample, cryptoContext,keyPair,8,depth); 
-    std::thread t2(BootstrapExample, cryptoContext,keyPair,8,depth); 
-    std::thread t3(BootstrapExample, cryptoContext,keyPair,8,depth); 
-    std::thread t4(BootstrapExample, cryptoContext,keyPair,8,depth); 
+    // std::thread t1(BootstrapExample, keys, numSlots, total_level); 
+    // std::thread t2(BootstrapExample, keys, numSlots, total_level); 
+    // std::thread t3(BootstrapExample, keys, numSlots, total_level); 
+    // std::thread t4(BootstrapExample, keys, numSlots, total_level); 
 
 
-    t1.join();
-    t2.join();
-    t3.join();
-    t4.join();
+    // t1.join();
+    // t2.join();
+    // t3.join();
+    // t4.join();
 
     print_stat();
     print_memory_stat();
 }
+
+// int main(int argc, char* argv[]) {
+//     // We run the example with 8 slots and ring dimension 4096 to illustrate how to run bootstrapping with a sparse plaintext.
+//     // Using a sparse plaintext and specifying the smaller number of slots gives a performance improvement (typically up to 3x).
+    
+//     uint32_t numSlots = 8; // Fully-Packed (numSlots = (logN)/2)
+//     init_stat();
+//     print_memory_stat();
+
+//     CryptoContext<DCRTPoly> cryptoContext;
+//     KeyPair<lbcrypto::DCRTPoly> keyPair;
+
+//     usint depth = Initialize(cryptoContext,keyPair,numSlots);
+
+//     set_num_prallel_jobs(1);
+
+//     init_stat_no_workqueue();
+
+//     BootstrapExample(cryptoContext, keyPair, numSlots, depth);
+//     // BootstrapExample(cryptoContext, keyPair, numSlots, depth);
+//     // BootstrapExample(cryptoContext, keyPair, numSlots, depth);
+//     // BootstrapExample(cryptoContext, keyPair, numSlots, depth);
+    
+//     // std::thread t1(BootstrapExample, cryptoContext,keyPair,numSlots,depth); 
+//     // std::thread t2(BootstrapExample, cryptoContext,keyPair,numSlots,depth); 
+//     // std::thread t3(BootstrapExample, cryptoContext,keyPair,numSlots,depth); 
+//     // std::thread t4(BootstrapExample, cryptoContext,keyPair,numSlots,depth); 
+
+
+//     // t1.join();
+//     // t2.join();
+//     // t3.join();
+//     // t4.join();
+
+//     print_stat();
+//     print_memory_stat();
+// }
 
 usint Initialize(CryptoContext<DCRTPoly>& cryptoContext, KeyPair<lbcrypto::DCRTPoly>& keyPair, uint32_t numSlots) {
     // Step 1: Set CryptoContext
@@ -183,12 +317,15 @@ usint Initialize(CryptoContext<DCRTPoly>& cryptoContext, KeyPair<lbcrypto::DCRTP
     std::cout << "CKKS scheme is using ring dimension " << ringDim << std::endl << std::endl;
 
     // Step 2: Precomputations for bootstrapping
+    std::cout << "Precomputations for bootstrapping..." << std::endl;
     cryptoContext->EvalBootstrapSetup(levelBudget, bsgsDim, numSlots);
 
     // Step 3: Key Generation
+    std::cout << "Key generation..." << std::endl;
     keyPair = cryptoContext->KeyGen();
     cryptoContext->EvalMultKeyGen(keyPair.secretKey);
     // Generate bootstrapping keys.
+    std::cout << "Generating bootstrapping keys..." << std::endl;
     cryptoContext->EvalBootstrapKeyGen(keyPair.secretKey, numSlots);
     
     return depth;
@@ -214,7 +351,7 @@ void BootstrapExample(CryptoContext<DCRTPoly> cryptoContext, KeyPair<lbcrypto::D
     // We start with a depleted ciphertext that has used up all of its levels.
     Plaintext ptxt = cryptoContext->MakeCKKSPackedPlaintext(x, 1, depth - 1, nullptr, numSlots);
     ptxt->SetLength(numSlots);
-    std::cout << "Input: " << ptxt << std::endl;
+    std::cout << "Input \n\t" << ptxt << std::endl;
 
     // Encrypt the encoded vectors
     Ciphertext<DCRTPoly> ciph = cryptoContext->Encrypt(keyPair.publicKey, ptxt);

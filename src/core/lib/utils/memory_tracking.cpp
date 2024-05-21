@@ -22,7 +22,7 @@ bool check_evk_set(uint64_t evk_addr){
         return false;
     }
     else{
-        std::cout << "evk b vector" << std::endl;
+        // std::cout << "evk b vector" << std::endl;
         return true;
     }
 }

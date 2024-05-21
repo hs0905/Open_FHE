@@ -127,14 +127,19 @@ EvalKey<DCRTPoly> KeySwitchHYBRID::KeySwitchGenInternal(const PrivateKey<DCRTPol
                 b.SetElementAtIndex(i, -ai * sNewi + PModq[i] * sOldi + ns * ei);
             }
         }
+
         av[part] = a;
         bv[part] = b;
 
-        for (size_t i = 0; i < sizeQP; ++i){
-            insert_evk_set((uint64_t)&(bv[part].GetElementAtIndex(i).m_values));
-            clean_shadow_tracking_array((uint64_t)&(bv[part].GetElementAtIndex(i).m_values_shadow));
-            bv[part].GetElementAtIndex(i).m_values_shadow.shadow_location = SHADOW_ON_OCB;
-        }
+        // for (size_t i = 0; i < sizeQP; ++i){
+        //     insert_evk_set((uint64_t)&(bv[part].GetElementAtIndex(i).m_values));
+        //     clean_shadow_tracking_array((uint64_t)&(bv[part].GetElementAtIndex(i).m_values_shadow));
+        //     bv[part].GetElementAtIndex(i).m_values_shadow.shadow_location = SHADOW_ON_OCB;
+
+        //     insert_evk_set((uint64_t)&(av[part].GetElementAtIndex(i).m_values));
+        //     clean_shadow_tracking_array((uint64_t)&(av[part].GetElementAtIndex(i).m_values_shadow));
+        //     av[part].GetElementAtIndex(i).m_values_shadow.shadow_location = SHADOW_ON_OCB;
+        // }
     }
 
     ek->SetAVector(std::move(av));
