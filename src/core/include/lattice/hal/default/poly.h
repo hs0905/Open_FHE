@@ -53,6 +53,7 @@
 #include <utility>
 #include <vector>
 #include <tuple>
+#include <fstream>
 
 #include "utils/memory_tracking.h"
 
@@ -61,7 +62,7 @@ void inc_copy_from_shadow();
 void inc_copy_from_shadow_ocb_real();
 void inc_copy_from_shadow_hbm_real();
 void inc_copy_to_shadow();
-void inc_copy_to_shadow_real();
+void inc_copy_to_shadow_real(uint64_t addr);
 void inc_copy_from_other_shadow();
 void inc_copy_from_other_shadow1();
 void inc_copy_from_other_shadow2();
@@ -72,24 +73,38 @@ void inc_discard_shadow();
 void inc_compute_implemented();
 void inc_compute_not_implemented();
 
+void inc_ntt();
+void inc_intt();
+void inc_auto();
+void inc_add();
+void inc_sub();
+void inc_mult();
+void inc_bconv_up();
+void inc_bconv_down();
+
 /* fucntion for managing memory tracking (for recognizing buffer locations) (utils/memory_tracking.cpp) */
 bool check_full_ocb_entries();
 bool check_full_hbm_entries();
 void insert_shadow_tracking_array(uint64_t m_values_addr, uint64_t m_values_shadow_addr, bool &ongoing_flag);
-void insert_shadow_hbm_tracking_array(uint64_t m_values_addr, uint64_t m_values_shadow_addr);
+void insert_shadow_hbm_tracking_array(uint64_t m_values_addr, uint64_t m_values_shadow_addr, bool &ongoing_flag);
 std::tuple<uint64_t,uint64_t,bool*> evict_shadow_tracking_array();
-std::tuple<uint64_t,uint64_t> evict_shadow_hbm_tracking_array();
+std::tuple<uint64_t,uint64_t,bool*> evict_shadow_hbm_tracking_array();
 std::tuple<uint64_t,uint64_t,bool*> select_shadow_tracking_array(uint64_t m_values_shadow_addr);
-std::tuple<uint64_t,uint64_t> select_shadow_hbm_tracking_array(uint64_t m_values_shadow_addr);
+std::tuple<uint64_t,uint64_t,bool*> select_shadow_hbm_tracking_array(uint64_t m_values_shadow_addr);
 void clean_shadow_tracking_array(uint64_t m_values_shadow_addr);
 
-bool check_evk_set(uint64_t evk_addr); 
+bool check_evk_set(uint64_t evk_addr);
+void check_evk_map(uint64_t evk_addr); 
 
 /* working queue for off-load FHE tasks */
 #include "utils/custom_task.h"
 extern WorkQueue work_queue;
 
 extern std::mutex ocb_entries_m;
+extern uint32_t ROOT_ENTRIES_NUM;
+extern uint32_t IROOT_ENTRIES_NUM;
+
+extern bool compute_flag;
 
 namespace lbcrypto {
 
@@ -177,12 +192,28 @@ public:
             inc_copy_from_shadow_ocb_real();
             ::memcpy((char*)&m_values->m_data[0],m_values_shadow.get_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
             m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
+            if(compute_flag){
+                // std::cout << "ORIGIN <-- OCB" << std::endl;
+                std::ofstream file("commandrecord.csv", std::ios::app);
+                if (file.is_open()) {
+                    file << "D, " << "PCIE, " << (uint64_t)&m_values->m_data[0] << ", " << (uint64_t)m_values_shadow.get_ptr() << std::endl;
+                    file.close();
+                }
+            }
         }
 
         if(m_values_shadow.shadow_location==SHADOW_ON_HBM && m_values_shadow.shadow_sync_state == SHADOW_IS_AHEAD) {
             inc_copy_from_shadow_hbm_real();
             ::memcpy((char*)&m_values->m_data[0],m_values_shadow.get_hbm_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
             m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
+            if(compute_flag){
+                // std::cout << "ORIGIN     <--     HBM" << std::endl;
+                std::ofstream file("commandrecord.csv", std::ios::app);
+                if (file.is_open()) {
+                    file << "D, " << "PCIE, " << (uint64_t)&m_values->m_data[0] << ", " << (uint64_t)m_values_shadow.get_hbm_ptr() << std::endl;
+                    file.close();
+                }
+            }
         }
     }
 
@@ -200,14 +231,25 @@ public:
                 tmp_m_values = std::make_unique<VecType>(r, m_params->GetModulus());
             }
 
-            inc_copy_from_shadow_hbm_real();
-            ::memcpy((char*)&tmp_m_values->m_data[0],tmp_m_values_shadow.get_hbm_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
+            if(tmp_m_values_shadow.shadow_location==SHADOW_ON_HBM && tmp_m_values_shadow.shadow_sync_state == SHADOW_IS_AHEAD){
+                inc_copy_from_shadow_hbm_real();
+                ::memcpy((char*)&tmp_m_values->m_data[0],tmp_m_values_shadow.get_hbm_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
+                if(compute_flag){
+                    // std::cout << "ORIGIN     <--     HBM" << std::endl;
+                    std::ofstream file("commandrecord.csv", std::ios::app);
+                    if (file.is_open()) {
+                        file << "D, " << "PCIE, " << (uint64_t)&tmp_m_values->m_data[0] << ", " << (uint64_t)tmp_m_values_shadow.get_hbm_ptr() <<  std::endl;
+                        file.close();
+                    }
+                }
+            }
 
             inc_discard_shadow();
             tmp_m_values_shadow.m_values = nullptr;
             tmp_m_values_shadow.m_values_hbm = nullptr;
             tmp_m_values_shadow.shadow_sync_state = SHADOW_NOTEXIST;
             tmp_m_values_shadow.shadow_location = SHADOW_NOTEXIST;
+            tmp_m_values_shadow.ongoing_flag = false;
         }
     }
 
@@ -222,13 +264,13 @@ public:
         inc_copy_to_shadow();
         ocb_entries_m.lock();
         if(m_values_shadow.shadow_location==SHADOW_ON_HBM){ // When shadow in HBM, need to swap OCB <-> HBM
-            std::tuple<uint64_t,uint64_t> hbm_tmp = select_shadow_hbm_tracking_array(uint64_t(&m_values_shadow));
+            std::tuple<uint64_t,uint64_t,bool*> hbm_tmp = select_shadow_hbm_tracking_array(uint64_t(&m_values_shadow));
             if(check_full_ocb_entries()){
                 std::tuple<uint64_t,uint64_t,bool*> tmp = evict_shadow_tracking_array();
-                if(std::get<1>(hbm_tmp)) insert_shadow_tracking_array(std::get<0>(hbm_tmp),std::get<1>(hbm_tmp),m_values_shadow.ongoing_flag);
-                if(std::get<1>(tmp)) insert_shadow_hbm_tracking_array(std::get<0>(tmp),std::get<1>(tmp));
+                if(std::get<1>(hbm_tmp)) insert_shadow_tracking_array(std::get<0>(hbm_tmp),std::get<1>(hbm_tmp),*std::get<2>(hbm_tmp));
+                if(std::get<1>(tmp)) insert_shadow_hbm_tracking_array(std::get<0>(tmp),std::get<1>(tmp),*std::get<2>(tmp));
                 
-                
+                // inc_copy_from_other_shadow1(); // OCB -> OCB (tmp)
                 if(std::get<1>(hbm_tmp)) copy_from_hbm_shadow(m_values_shadow);
                 if(std::get<1>(tmp)){
                     ShadowType<VecType>* tmp_m_values_shadow_addr = (ShadowType<VecType>*)std::get<1>(tmp);
@@ -237,7 +279,7 @@ public:
             }
             else{
                 if(std::get<1>(hbm_tmp)){
-                    insert_shadow_tracking_array(std::get<0>(hbm_tmp),std::get<1>(hbm_tmp),m_values_shadow.ongoing_flag);
+                    insert_shadow_tracking_array(std::get<0>(hbm_tmp),std::get<1>(hbm_tmp),*std::get<2>(hbm_tmp));
                     copy_from_hbm_shadow(m_values_shadow);
                 }
             }
@@ -253,11 +295,56 @@ public:
         if(m_values_shadow.shadow_sync_state == SHADOW_NOTEXIST) {
             create_shadow();   
         }            
-        if(m_values_shadow.shadow_sync_state == SHADOW_IS_BEHIND) {   
-            if(!check_evk_set((uint64_t)&m_values)) inc_copy_to_shadow_real();
+        if(m_values_shadow.shadow_sync_state == SHADOW_IS_BEHIND && m_values->m_data[0]!=0) {   
+            /*if(!check_evk_set((uint64_t)&m_values))*/ inc_copy_to_shadow_real((uint64_t)&m_values);
             ::memcpy(m_values_shadow.get_ptr(),(char*)&m_values->m_data[0],sizeof(uint64_t)*m_params->GetRingDimension());
             m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
+            if(compute_flag){
+                // std::cout << "ORIGIN --> OCB" << std::endl;
+                std::ofstream file("commandrecord.csv", std::ios::app);
+                if (file.is_open()) {
+                    file << "D, " << "PCIE, " << (uint64_t)m_values_shadow.get_ptr() << ", " << (uint64_t)&m_values->m_data[0] << std::endl;
+                    file.close();
+                }
+            }
         }
+    }
+
+    void copy_to_shadow_() const {
+        inc_copy_to_shadow();
+        ocb_entries_m.lock();
+        if(m_values_shadow.shadow_location==SHADOW_ON_HBM){ // When shadow in HBM, need to swap OCB <-> HBM
+            std::tuple<uint64_t,uint64_t,bool*> hbm_tmp = select_shadow_hbm_tracking_array(uint64_t(&m_values_shadow));
+            if(check_full_ocb_entries()){
+                std::tuple<uint64_t,uint64_t,bool*> tmp = evict_shadow_tracking_array();
+                if(std::get<1>(hbm_tmp)) insert_shadow_tracking_array(std::get<0>(hbm_tmp),std::get<1>(hbm_tmp),*std::get<2>(hbm_tmp));
+                if(std::get<1>(tmp)) insert_shadow_hbm_tracking_array(std::get<0>(tmp),std::get<1>(tmp),*std::get<2>(tmp));
+                
+                // inc_copy_from_other_shadow1(); // OCB -> OCB (tmp)
+                if(std::get<1>(hbm_tmp)) copy_from_hbm_shadow(m_values_shadow);
+                if(std::get<1>(tmp)){
+                    ShadowType<VecType>* tmp_m_values_shadow_addr = (ShadowType<VecType>*)std::get<1>(tmp);
+                    copy_to_hbm_shadow(*tmp_m_values_shadow_addr);
+                }
+            }
+            else{
+                if(std::get<1>(hbm_tmp)){
+                    insert_shadow_tracking_array(std::get<0>(hbm_tmp),std::get<1>(hbm_tmp),*std::get<2>(hbm_tmp));
+                    copy_from_hbm_shadow(m_values_shadow);
+                }
+            }
+        }
+        ocb_entries_m.unlock();
+        if(m_values == nullptr) {
+            if(m_values_shadow.shadow_sync_state != SHADOW_IS_AHEAD) {
+                OPENFHE_THROW(not_available_error, "m_values not created");
+            }
+            return;
+        }
+
+        if(m_values_shadow.shadow_sync_state == SHADOW_NOTEXIST) {
+            create_shadow();   
+        }            
     }
 
     /* Data trasfer : Hardware(on-chip buffer(OCB) or HBM) -> Hardware(on-chip buffer or HBM)
@@ -274,31 +361,63 @@ public:
         else {
             inc_copy_from_other_shadow();
             if(m_values_shadow.shadow_location==SHADOW_ON_OCB && other.shadow_location==SHADOW_ON_OCB){
-                if(!check_evk_set((uint64_t)&m_values)) inc_copy_from_other_shadow1();
+                /*if(!check_evk_set((uint64_t)&m_values))*/ inc_copy_from_other_shadow1();
                 ::memcpy(m_values_shadow.get_ptr(),other.get_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
                 m_values_shadow.shadow_sync_state = other.shadow_sync_state;
+                if(compute_flag){
+                   //  std::cout << "           OCB" << std::endl;
+                    std::ofstream file("commandrecord.csv", std::ios::app);
+                    if (file.is_open()) {
+                        file << "D, " << "SRAM, " << (uint64_t)m_values_shadow.get_ptr() << ", " << (uint64_t)other.get_ptr() << std::endl;
+                        file.close();
+                    }
+                }
             }
             else if(m_values_shadow.shadow_location==SHADOW_ON_OCB && other.shadow_location==SHADOW_ON_HBM){
                 inc_copy_from_other_shadow2();
                 ::memcpy(m_values_shadow.get_ptr(),other.get_hbm_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
                 m_values_shadow.shadow_sync_state = other.shadow_sync_state;
+                if(compute_flag){
+                    // std::cout << "           OCB <-- HBM" << std::endl;
+                    std::ofstream file("commandrecord.csv", std::ios::app);
+                    if (file.is_open()) {
+                        file << "D, " << "HBM, " << (uint64_t)m_values_shadow.get_ptr() << ", " << (uint64_t)other.get_hbm_ptr() << std::endl;
+                        file.close();
+                    }
+                }
             }
             else if(m_values_shadow.shadow_location==SHADOW_ON_HBM && other.shadow_location==SHADOW_ON_OCB){
                 inc_copy_from_other_shadow3();
                 ::memcpy(m_values_shadow.get_hbm_ptr(),other.get_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
                 m_values_shadow.shadow_sync_state = other.shadow_sync_state;
+                if(compute_flag){
+                    // std::cout << "           OCB --> HBM" << std::endl;
+                    std::ofstream file("commandrecord.csv", std::ios::app);
+                    if (file.is_open()) {
+                        file << "D, " << "HBM, " << (uint64_t)m_values_shadow.get_hbm_ptr() << ", " << (uint64_t)other.get_ptr() << std::endl;
+                        file.close();
+                    }
+                }
             }
             else if(m_values_shadow.shadow_location==SHADOW_ON_HBM && other.shadow_location==SHADOW_ON_HBM){
                 inc_copy_from_other_shadow4();
                 ::memcpy(m_values_shadow.get_hbm_ptr(),other.get_hbm_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
                 m_values_shadow.shadow_sync_state = other.shadow_sync_state;
+                if(compute_flag){
+                    // std::cout << "           HBM <-- HBM" << std::endl;
+                    std::ofstream file("commandrecord.csv", std::ios::app);
+                    if (file.is_open()) {
+                        file << "D, " << "HBM, " << (uint64_t)m_values_shadow.get_hbm_ptr() << ", " << (uint64_t)other.get_hbm_ptr() << std::endl;
+                        file.close();
+                    }
+                }
             }
             else{
                 OPENFHE_THROW(not_available_error, "wrong both location");
             }
         }
     }
-
+    
     /* Specialized method for OCB -> HBM
         Using in copy_to_shadow, discard_shadow
     */
@@ -313,6 +432,14 @@ public:
             inc_copy_from_other_shadow3();
             ::memcpy(tmp_m_values_shadow.get_hbm_ptr(),tmp_m_values_shadow.get_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
             tmp_m_values_shadow.shadow_location = SHADOW_ON_HBM;
+            if(compute_flag){
+                // std::cout << "           OCB --> HBM" << std::endl;
+                std::ofstream file("commandrecord.csv", std::ios::app);
+                if (file.is_open()) {
+                    file << "D, " << "HBM, " << (uint64_t)tmp_m_values_shadow.get_hbm_ptr() << ", " << (uint64_t)tmp_m_values_shadow.get_ptr() << std::endl;
+                    file.close();
+                }
+            }
         }
     }
 
@@ -327,6 +454,14 @@ public:
             inc_copy_from_other_shadow2();
             ::memcpy(tmp_m_values_shadow.get_ptr(),tmp_m_values_shadow.get_hbm_ptr(),sizeof(uint64_t)*m_params->GetRingDimension());
             tmp_m_values_shadow.shadow_location = SHADOW_ON_OCB;
+            if(compute_flag){
+                // std::cout << "           OCB <-- HBM" << std::endl;
+                std::ofstream file("commandrecord.csv", std::ios::app);
+                if (file.is_open()) {
+                    file << "D, " << "HBM, " << (uint64_t)tmp_m_values_shadow.get_ptr() << ", " << (uint64_t)tmp_m_values_shadow.get_hbm_ptr() << std::endl;
+                    file.close();
+                }
+            }
         }
     }
 
@@ -337,17 +472,17 @@ public:
         discard_shadow is used by the evict policy to manage additional data transfers
     */
     void create_shadow() const {
-        if(m_values_shadow.m_values) return;
+        if(m_values_shadow.m_values || m_values_shadow.shadow_sync_state != SHADOW_NOTEXIST) return;
 
         ocb_entries_m.lock();
-        if(!check_evk_set((uint64_t)&m_values) && check_full_ocb_entries()) discard_shadow();
+        if(/*!check_evk_set((uint64_t)&m_values) &&*/ check_full_ocb_entries()) discard_shadow();
 
         inc_create_shadow();
         m_values_shadow.m_values = std::make_shared<std::vector<uint64_t>>(m_params->GetRingDimension());
         m_values_shadow.shadow_sync_state = SHADOW_IS_BEHIND;
         m_values_shadow.shadow_location = SHADOW_ON_OCB;
 
-        if(!check_evk_set((uint64_t)&m_values)) insert_shadow_tracking_array((uint64_t)&m_values,(uint64_t)&m_values_shadow,m_values_shadow.ongoing_flag);
+        /*if(!check_evk_set((uint64_t)&m_values))*/ insert_shadow_tracking_array((uint64_t)&m_values,(uint64_t)&m_values_shadow,m_values_shadow.ongoing_flag);
         ocb_entries_m.unlock();
     }
 
@@ -357,7 +492,7 @@ public:
     */
     void discard_shadow() const{        
         if(check_full_hbm_entries()){ // When HBM is full
-            std::tuple<uint64_t,uint64_t> tmp = evict_shadow_hbm_tracking_array();
+            std::tuple<uint64_t,uint64_t,bool*> tmp = evict_shadow_hbm_tracking_array();
             if(std::get<0>(tmp)!=0){
                 std::unique_ptr<VecType>* tmp_m_values_addr = (std::unique_ptr<VecType>*)std::get<0>(tmp);
                 ShadowType<VecType>* tmp_m_values_shadow_addr = (ShadowType<VecType>*)std::get<1>(tmp);
@@ -369,7 +504,7 @@ public:
             ShadowType<VecType>* tmp_m_values_shadow_addr = (ShadowType<VecType>*)std::get<1>(tmp);
             copy_to_hbm_shadow(*tmp_m_values_shadow_addr);
             if((*tmp_m_values_shadow_addr).m_values){
-                insert_shadow_hbm_tracking_array(std::get<0>(tmp),std::get<1>(tmp));
+                insert_shadow_hbm_tracking_array(std::get<0>(tmp),std::get<1>(tmp),*std::get<2>(tmp));
             }
         }
     }
@@ -501,7 +636,10 @@ public:
         NativeInteger m{std::numeric_limits<BasicInteger>::max()};
         auto params{std::make_shared<ILParamsImpl<NativeInteger>>(c, m, 1)};
         typename PolyImpl<VecType>::PolyNative tmp(params, m_format, true);
+
+        // std::cout << "ToNativePoly" << std::endl;
         this->copy_from_shadow();
+
         for (usint i = 0; i < vlen; ++i)
             tmp[i] = NativeInteger((*m_values)[i]);
         return tmp;
@@ -538,6 +676,7 @@ public:
     }
 
     inline const VecType& GetValues() const final {
+        // std::cout << "GetValues" << std::endl;
         this->copy_from_shadow();
         if (m_values == nullptr)
             OPENFHE_THROW(not_available_error, "No values in PolyImpl");
@@ -545,11 +684,13 @@ public:
     }
 
     inline bool IsEmpty() const final {
+        // std::cout << "IsEmpty" << std::endl;
         this->copy_from_shadow();
         return m_values == nullptr;
     }
 
     inline Integer& at(usint i) final {
+        // std::cout << "at" << std::endl;
         this->copy_from_shadow();
         if (m_values == nullptr)
             OPENFHE_THROW(not_available_error, "No values in PolyImpl");
@@ -557,6 +698,7 @@ public:
     }
 
     inline const Integer& at(usint i) const final {
+        // std::cout << "const at" << std::endl;
         this->copy_from_shadow();
         if (m_values == nullptr)
             OPENFHE_THROW(not_available_error, "No values in PolyImpl");
@@ -564,11 +706,13 @@ public:
     }
 
     inline Integer& operator[](usint i) final {
+        // std::cout << "operator[]" << std::endl;
         this->copy_from_shadow();
         return (*m_values)[i];
     }
 
     inline const Integer& operator[](usint i) const final {
+        // std::cout << "const operator[]" << std::endl;
         this->copy_from_shadow();
         return (*m_values)[i];
     }
@@ -584,6 +728,7 @@ public:
             OPENFHE_THROW(math_error, "Modulus missmatch");
         if (m_format != rhs.m_format)
             OPENFHE_THROW(not_implemented_error, "Format missmatch");
+        
         auto tmp(*this);
 
         CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_Plus);
@@ -591,6 +736,7 @@ public:
         item->poly = (void*)this;
         item->poly2 = (void*)&tmp;
         item->poly3 = (void*)&rhs;
+        item->modulus = m_params->GetModulus().ConvertToInt();
 
         work_queue.addWork(item);
 
@@ -606,6 +752,7 @@ public:
         item->poly = (void*)this;
         item->poly2 = (void*)&tmp;
         item->poly3 = (void*)&rhs;
+        item->modulus = m_params->GetModulus().ConvertToInt();
 
         work_queue.addWork(item);
 
@@ -639,6 +786,7 @@ public:
             OPENFHE_THROW(math_error, "Modulus missmatch");
         if (m_format != Format::EVALUATION || rhs.m_format != Format::EVALUATION)
             OPENFHE_THROW(not_implemented_error, "operator* for PolyImpl supported only in Format::EVALUATION");
+        // std::cout << "PolyImpl Times(const PolyImpl& rhs)" << std::endl;
         auto tmp(*this);
 
         CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_Times);
@@ -646,6 +794,7 @@ public:
         item->poly = (void*)this;
         item->poly2 = (void*)&tmp;
         item->poly3 = (void*)&rhs;
+        item->modulus = m_params->GetModulus().ConvertToInt();
 
         work_queue.addWork(item);
 
@@ -661,6 +810,7 @@ public:
         item->poly = (void*)this;
         item->poly2 = (void*)&tmp;
         item->poly3 = (void*)&rhs;
+        item->modulus = m_params->GetModulus().ConvertToInt();
 
         work_queue.addWork(item);
 
@@ -683,6 +833,7 @@ public:
 
         item->poly = (void*)this;
         item->poly2 = (void*)&rhs;
+        item->modulus = m_params->GetModulus().ConvertToInt();
 
         work_queue.addWork(item);
 
@@ -723,6 +874,11 @@ public:
 
     void SwitchModulus(const Integer& modulus, const Integer& rootOfUnity, const Integer& modulusArb,
                        const Integer& rootOfUnityArb) override;
+    void bconv_pipe(const Integer& modulus, const Integer& rootOfUnity, const Integer& modulusArb,
+                    const Integer& rootOfUnityArb,
+                    const Integer& element,
+                    PolyImpl& element2
+                    );
     void SwitchFormat() override;
     void MakeSparse(uint32_t wFactor) override;
     bool InverseExists() const override;

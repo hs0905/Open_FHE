@@ -531,6 +531,8 @@ bool CKKSPackedEncoding::Decode(size_t noiseScaleDeg, double scalingFactor, Scal
         // }
 
         //   If less than 5 bits of precision is observed
+        std::cout << "logstd: " << logstd << std::endl;
+        std::cout << "p - 5.0: " << p - 5.0 << std::endl;
         if (logstd > p - 5.0)
             OPENFHE_THROW(math_error,
                           "The decryption failed because the approximation error is "

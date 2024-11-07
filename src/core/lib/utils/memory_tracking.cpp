@@ -1,8 +1,14 @@
 #include "utils/memory_tracking.h"
 
+uint32_t FPGA_N = 65536;
+uint32_t OCB_MB = 8;
+uint32_t HBM_GB = 8;
+uint32_t ROOT_ENTRIES_NUM = 1;
+uint32_t IROOT_ENTRIES_NUM = 1;
 uint32_t cnt_cur_ocb_entries = 0;
 uint32_t cnt_cur_hbm_entries = 0;
 std::mutex ocb_entries_m;
+std::chrono::duration<double, std::milli> elapsed_overhead;
 /*  This is memory tracking structure.
     For performance, information about the shadow buffer is stored in deque and unordered maps.
     Origin memory address, shadow memory address,ongoing flag are
@@ -11,11 +17,21 @@ std::mutex ocb_entries_m;
     and it is possible to find where a particular buffer is in the memory tracking structure at once.
 */
 std::deque<std::tuple<uint64_t,uint64_t,bool*>> shadow_tracking_array;
-std::deque<std::tuple<uint64_t,uint64_t>> shadow_hbm_tracking_array;
+std::deque<std::tuple<uint64_t,uint64_t,bool*>> shadow_hbm_tracking_array;
 std::unordered_map<uint64_t,std::deque<std::tuple<uint64_t,uint64_t,bool*>>::iterator> shadow_tracking_map;
-std::unordered_map<uint64_t,std::deque<std::tuple<uint64_t,uint64_t>>::iterator> shadow_hbm_tracking_map;
+std::unordered_map<uint64_t,std::deque<std::tuple<uint64_t,uint64_t,bool*>>::iterator> shadow_hbm_tracking_map;
 bool false_flag = false;
 std::unordered_set<uint64_t> evk_set;
+std::unordered_map<uint64_t,uint64_t> evk_map;
+
+void insert_evk_map(uint64_t evk_addr){
+    evk_map[evk_addr] = 0;
+}
+
+void check_evk_map(uint64_t evk_addr){
+    if(evk_map.find(evk_addr) != evk_map.end())
+        evk_map[evk_addr]++;
+}
 
 bool check_evk_set(uint64_t evk_addr){
     if(evk_set.find(evk_addr) == evk_set.end()){
@@ -66,20 +82,33 @@ void dec_cur_hbm_entries(){
 
 /* Enter information in the memory tracking structure when the shadow is newly created */
 void insert_shadow_tracking_array(uint64_t m_values_addr, uint64_t m_values_shadow_addr, bool &ongoing_flag){
+    auto start_work = std::chrono::high_resolution_clock::now();
+
     shadow_tracking_array.push_front(std::make_tuple(m_values_addr,m_values_shadow_addr,&ongoing_flag));
     shadow_tracking_map[m_values_shadow_addr] = shadow_tracking_array.begin();
+    
+    auto end_work = std::chrono::high_resolution_clock::now();
+    elapsed_overhead += end_work - start_work;
 
     inc_cur_ocb_entries();
 }
-void insert_shadow_hbm_tracking_array(uint64_t m_values_addr, uint64_t m_values_shadow_addr){
-    shadow_hbm_tracking_array.push_front(std::make_tuple(m_values_addr,m_values_shadow_addr));
+void insert_shadow_hbm_tracking_array(uint64_t m_values_addr, uint64_t m_values_shadow_addr, bool &ongoing_flag){
+    auto start_work = std::chrono::high_resolution_clock::now();
+
+    shadow_hbm_tracking_array.push_front(std::make_tuple(m_values_addr,m_values_shadow_addr,&ongoing_flag));
     shadow_hbm_tracking_map[m_values_shadow_addr] = shadow_hbm_tracking_array.begin();
+
+    auto end_work = std::chrono::high_resolution_clock::now();
+    elapsed_overhead += end_work - start_work;
+
     inc_cur_hbm_entries();
 }
 
 /* for 'discard_shadow' fucntion, when on-chip-buffer is full,
     choose victim (FIFO Rule) */
 std::tuple<uint64_t,uint64_t,bool*> evict_shadow_tracking_array(){
+    auto start_work = std::chrono::high_resolution_clock::now();
+
     auto tmp = shadow_tracking_array.back();
 
     while(*std::get<2>(tmp)==true || std::get<1>(tmp) == 0){
@@ -99,16 +128,25 @@ std::tuple<uint64_t,uint64_t,bool*> evict_shadow_tracking_array(){
     }
     shadow_tracking_map.erase(it);
     shadow_tracking_array.pop_back();
+
+    auto end_work = std::chrono::high_resolution_clock::now();
+    elapsed_overhead += end_work - start_work;
  
     dec_cur_ocb_entries();
     return tmp;
 }
 /* for 'discard_shadow' fucntion, HBM is full,
     choose victim (FIFO Rule) */
-std::tuple<uint64_t,uint64_t> evict_shadow_hbm_tracking_array(){
+std::tuple<uint64_t,uint64_t,bool*> evict_shadow_hbm_tracking_array(){
+    auto start_work = std::chrono::high_resolution_clock::now();
+
     auto tmp = shadow_hbm_tracking_array.back();
-    while(std::get<1>(tmp) == 0){
+    while(*std::get<2>(tmp)==true || std::get<1>(tmp) == 0){
         shadow_hbm_tracking_array.pop_back();
+        if(*std::get<2>(tmp)==true){
+            shadow_tracking_array.push_front(tmp);
+            shadow_tracking_map[std::get<1>(tmp)] = shadow_tracking_array.begin();
+        }
         tmp = shadow_hbm_tracking_array.back();
     }
     auto it = shadow_hbm_tracking_map.find(std::get<1>(tmp));
@@ -120,29 +158,45 @@ std::tuple<uint64_t,uint64_t> evict_shadow_hbm_tracking_array(){
     }
     shadow_hbm_tracking_map.erase(it);
     shadow_hbm_tracking_array.pop_back();
+
+    auto end_work = std::chrono::high_resolution_clock::now();
+    elapsed_overhead += end_work - start_work;
+
     dec_cur_hbm_entries();
     return tmp;
 }
 
 /* not use */
 std::tuple<uint64_t,uint64_t,bool*> select_shadow_tracking_array(uint64_t m_values_shadow_addr){
+    auto start_work = std::chrono::high_resolution_clock::now();
+    
     auto it = shadow_tracking_map.find(m_values_shadow_addr);
     if(it == shadow_tracking_map.end()) std::cout << "wrong select_shadow_tracking_array" << std::endl;
     auto tmp = *(it->second);
     *(it->second) = std::make_tuple(0,0,&false_flag);
     shadow_tracking_map.erase(it);
+
+    auto end_work = std::chrono::high_resolution_clock::now();
+    elapsed_overhead += end_work - start_work;
+
     dec_cur_ocb_entries();
     return tmp;
 }
 
 /* for copy_to_shadow function, when shadow buffer in HBM
     we need to find shadow buffer information in memory tracking structure */
-std::tuple<uint64_t,uint64_t> select_shadow_hbm_tracking_array(uint64_t m_values_shadow_addr){
+std::tuple<uint64_t,uint64_t,bool*> select_shadow_hbm_tracking_array(uint64_t m_values_shadow_addr){
+    auto start_work = std::chrono::high_resolution_clock::now();
+    
     auto it = shadow_hbm_tracking_map.find(m_values_shadow_addr);
     if(it == shadow_hbm_tracking_map.end()) std::cout << "wrong select_shadow_hbm_tracking_array" << std::endl;
     auto tmp = *(it->second);
-    *(it->second) = std::make_tuple(0,0);
+    *(it->second) = std::make_tuple(0,0,&false_flag);
     shadow_hbm_tracking_map.erase(it);
+
+    auto end_work = std::chrono::high_resolution_clock::now();
+    elapsed_overhead += end_work - start_work;
+
     dec_cur_hbm_entries();
     return tmp;
 }
@@ -151,23 +205,36 @@ std::tuple<uint64_t,uint64_t> select_shadow_hbm_tracking_array(uint64_t m_values
     Therefore, when the memory for the polynomial is released,
     Remove the memory information from the memory tracking data structure */
 void clean_shadow_tracking_array(uint64_t m_values_shadow_addr){
+    auto start_work = std::chrono::high_resolution_clock::now();
+
     ocb_entries_m.lock();
     auto it = shadow_tracking_map.find(m_values_shadow_addr);
     if(it != shadow_tracking_map.end()){
         *(it->second) = std::make_tuple(0,0,&false_flag);
         shadow_tracking_map.erase(it);
+
+        auto end_work = std::chrono::high_resolution_clock::now();
+        elapsed_overhead += end_work - start_work;
+
         dec_cur_ocb_entries();
         ocb_entries_m.unlock();
         return;
     }
     auto it_ = shadow_hbm_tracking_map.find(m_values_shadow_addr);
     if(it_ != shadow_hbm_tracking_map.end()){
-        *(it_->second) = std::make_tuple(0,0);
+        *(it_->second) = std::make_tuple(0,0,&false_flag);
         shadow_hbm_tracking_map.erase(it_);
+
+        auto end_work = std::chrono::high_resolution_clock::now();
+        elapsed_overhead += end_work - start_work;
+
         dec_cur_hbm_entries();
         ocb_entries_m.unlock();
         return;
     }
+
+    auto end_work = std::chrono::high_resolution_clock::now();
+    elapsed_overhead += end_work - start_work;
 
     ocb_entries_m.unlock();
     return;
@@ -186,9 +253,23 @@ bool check_full_ocb_entries(){
 /* for checking that the HBM is full */
 bool check_full_hbm_entries(){
     if(cnt_cur_hbm_entries >= HBM_ENTRIES_NUM){
+        // std::cout << "HBM is full" << std::endl;
         return true;
     }
     else{
         return false;
     }
 }
+
+// void clear_tracking_object(){
+//     for(size_t i=0; i<OCB_ENTRIES_NUM+HBM_ENTRIES_NUM; i++){
+//         if(check_full_ocb_entries()) discard_shadow();
+//         insert_shadow_tracking_array(0,0,false_flag);
+//     }
+//     shadow_tracking_array.clear();
+//     shadow_hbm_tracking_array.clear();
+//     shadow_tracking_map.clear();
+//     shadow_hbm_tracking_map.clear();
+//     cnt_cur_ocb_entries = 0;
+//     cnt_cur_hbm_entries = 0;
+// }

@@ -7,6 +7,7 @@
 #include <atomic>
 #include <thread>
 #include <unistd.h>
+#include <chrono>
 
 /* FHE Unit operation numbering */
 #define TASK_TYPE_PlainModMulEqScalar 1
@@ -24,6 +25,7 @@
 #define TASK_TYPE_Times 13
 #define TASK_TYPE_TimesNoCheck 14
 #define TASK_TYPE_TimesInPlace 15
+#define TASK_TYPE_BCONV_PIPE 16
 
 struct CustomTaskItem {
   int task_type;
@@ -36,11 +38,13 @@ struct CustomTaskItem {
   uint64_t param2;
   uint64_t param3;
   uint64_t param4;
+  uint64_t param5;
+  uint64_t modulus;
   uint32_t* ptr32_1;
 
   std::atomic<bool> processed;
 
-  CustomTaskItem(int t) : task_type(t), poly(NULL), poly2(NULL), poly3(NULL), param1(0), param2(0), param3(0), param4(0), ptr32_1(NULL), processed(false){}
+  CustomTaskItem(int t) : task_type(t), poly(NULL), poly2(NULL), poly3(NULL), param1(0), param2(0), param3(0), param4(0), param5(0), ptr32_1(NULL), processed(false){}
 };
 
 class WorkQueue {
@@ -52,8 +56,17 @@ private:
 
     uint32_t num_parallel_jobs = 1;
     uint32_t num_parallel_jobs_synched = 0;
+    std::chrono::duration<double, std::milli> elapsed_busywaiting = std::chrono::duration<double, std::milli>(0.0);
 
 public:
+    void print_elapsed_busywaiting() {
+        std::cout << "elapsed_busywaiting: " << elapsed_busywaiting.count() << " ms" << std::endl;
+    }
+
+    void init_elapsed_busywaiting(){
+        elapsed_busywaiting = std::chrono::duration<double, std::milli>(0.0);
+    }
+
     void addWork(CustomTaskItem* item) {
         {
             std::unique_lock<std::mutex> lock(mtx);        
@@ -81,9 +94,15 @@ public:
             
             if(queue_ready ||  finished) break;
 
+            // auto start_work = std::chrono::high_resolution_clock::now();
+
             lock.unlock();
-            std::this_thread::yield(); // Yield to reduce CPU usage
+            // std::this_thread::yield(); // Yield to reduce CPU usage
             lock.lock();
+
+            // auto end_work = std::chrono::high_resolution_clock::now();
+            // elapsed_busywaiting += end_work - start_work;
+            // std::cout << "elapsed_busywaiting: " << elapsed_busywaiting.count() << " ms" << std::endl;
         }
 
         if (queue.empty()) return false;
@@ -98,26 +117,14 @@ public:
         auto item = queue.front();
         queue.pop_front();        
         items.push_back(item);
-        
 
-        void* poly3 = item->poly3;
-        int task_type = item->task_type;
-        uint64_t modulus =  item->param3;
-
-        // Iterate from the second element to the end to find tasks that can be processed together.
+        uint64_t modulus =  item->modulus;
         for (auto it = queue.begin(); it != queue.end(); ++it) {
             if(num_parallel_jobs_synched == 0) break;
 
-            void* o_poly3 = (*it)->poly3;
-
             bool param_match = false;
-            if (poly3) {
-                if (poly3 == o_poly3) param_match = true;
-            }
 
-            if(task_type == TASK_TYPE_SwitchFormatForwardTransform || task_type == TASK_TYPE_SwitchFormatInverseTransform) {
-                if( modulus ==  (*it)->param3 ) param_match = true;
-            }
+            if( modulus ==  (*it)->modulus ) param_match = true;
 
             if (param_match)  {
                 auto o_item = queue.front();
@@ -127,6 +134,34 @@ public:
                 num_parallel_jobs_synched --;
             }
         }
+
+        // void* poly3 = item->poly3;
+        // int task_type = item->task_type;
+        // uint64_t modulus =  item->param3;
+
+        // // Iterate from the second element to the end to find tasks that can be processed together.
+        // for (auto it = queue.begin(); it != queue.end(); ++it) {
+        //     if(num_parallel_jobs_synched == 0) break;
+
+        //     void* o_poly3 = (*it)->poly3;
+
+        //     bool param_match = false;
+        //     if (poly3) {
+        //         if (poly3 == o_poly3) param_match = true;
+        //     }
+
+        //     if(task_type == TASK_TYPE_SwitchFormatForwardTransform || task_type == TASK_TYPE_SwitchFormatInverseTransform) {
+        //         if( modulus ==  (*it)->param3 ) param_match = true;
+        //     }
+
+        //     if (param_match)  {
+        //         auto o_item = queue.front();
+        //         queue.pop_front();
+        //         items.push_back(o_item);
+
+        //         num_parallel_jobs_synched --;
+        //     }
+        // }
 
         return true;
     }

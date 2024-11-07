@@ -42,6 +42,9 @@ CKKS implementation. See https://eprint.iacr.org/2020/1118 for details.
 
 #include "schemebase/base-scheme.h"
 
+extern void print_stat_no_workqueue();
+extern bool compute_flag;
+
 namespace lbcrypto {
 
 /////////////////////////////////////////

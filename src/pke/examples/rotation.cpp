@@ -48,24 +48,41 @@ void BFVrnsEvalRotate2n();
 void CKKSEvalRotate2n();
 void BFVrnsEvalMerge2n();
 
+void init_stat();
+void init_stat_no_workqueue();
+void print_stat();
+void print_memory_stat();
+void set_num_prallel_jobs(uint32_t num_parallel);
+
+extern uint32_t OCB_MB;
+extern uint32_t BOOT_SCHEME;
+extern uint32_t cnt_copy_from_other_shadow2;
+extern uint32_t cnt_copy_from_other_shadow3;
+
 int main() {
-    std::cout << "\nThis code shows how the EvalRotate and EvalMerge operations work "
-                 "for different cyclotomic rings (both power-of-two and cyclic).\n"
-              << std::endl;
+    // std::cout << "\nThis code shows how the EvalRotate and EvalMerge operations work "
+    //              "for different cyclotomic rings (both power-of-two and cyclic).\n"
+    //           << std::endl;
 
-    std::cout << "\n========== BFVrns.EvalRotate - Power-of-Two Cyclotomics "
-                 "==========="
-              << std::endl;
+    // std::cout << "\n========== BFVrns.EvalRotate - Power-of-Two Cyclotomics "
+    //              "==========="
+    //           << std::endl;
 
-    BFVrnsEvalRotate2n();
+    // BFVrnsEvalRotate2n();
 
     std::cout << "\n========== CKKS.EvalRotate - Power-of-Two Cyclotomics ===========" << std::endl;
 
+    init_stat();
+    print_memory_stat();
+
     CKKSEvalRotate2n();
 
-    std::cout << "\n========== BFVrns.EvalMerge - Power-of-Two Cyclotomics ===========" << std::endl;
+    print_stat();
+    print_memory_stat();
 
-    BFVrnsEvalMerge2n();
+    // std::cout << "\n========== BFVrns.EvalMerge - Power-of-Two Cyclotomics ===========" << std::endl;
+
+    // BFVrnsEvalMerge2n();
 
     return 0;
 }
@@ -139,6 +156,8 @@ void CKKSEvalRotate2n() {
     vectorOfInts[n - 1] = n;
     vectorOfInts[n - 2] = n - 1;
     vectorOfInts[n - 3] = n - 2;
+
+    init_stat_no_workqueue();
 
     Plaintext intArray = cc->MakeCKKSPackedPlaintext(vectorOfInts);
 

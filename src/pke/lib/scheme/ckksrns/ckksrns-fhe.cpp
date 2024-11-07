@@ -53,6 +53,9 @@
 #include <memory>
 #include <vector>
 
+extern void init_stat_no_workqueue();
+extern void print_stat_no_workqueue();
+
 namespace lbcrypto {
 
 //------------------------------------------------------------------------------
@@ -369,6 +372,7 @@ Ciphertext<DCRTPoly> FHECKKSRNS::EvalBootstrap(ConstCiphertext<DCRTPoly> ciphert
     // it's scaling factor to the one that corresponds to the level
     // it's being raised to.
     // Increasing the modulus
+    std::cout << "Raising the modulus..." << std::endl;
 
     Ciphertext<DCRTPoly> raised = ciphertext->Clone();
     auto algo                   = cc->GetScheme();
@@ -400,6 +404,8 @@ Ciphertext<DCRTPoly> FHECKKSRNS::EvalBootstrap(ConstCiphertext<DCRTPoly> ciphert
     //------------------------------------------------------------------------------
 
     // Coefficients of the Chebyshev series interpolating 1/(2 Pi) Sin(2 Pi K x)
+    std::cout << "Setting parameters for approximate modular reduction..." << std::endl;
+
     std::vector<double> coefficients;
     double k = 0;
 
@@ -437,6 +443,8 @@ Ciphertext<DCRTPoly> FHECKKSRNS::EvalBootstrap(ConstCiphertext<DCRTPoly> ciphert
         //------------------------------------------------------------------------------
         // Running CoeffToSlot
         //------------------------------------------------------------------------------
+        
+        std::cout << "fully packed case - Running CoeffToSlot..." << std::endl;
 
         // need to call internal modular reduction so it also works for FLEXIBLEAUTO
         algo->ModReduceInternalInPlace(raised, BASE_NUM_LEVELS_TO_DROP);
@@ -467,6 +475,7 @@ Ciphertext<DCRTPoly> FHECKKSRNS::EvalBootstrap(ConstCiphertext<DCRTPoly> ciphert
         //------------------------------------------------------------------------------
         // Running Approximate Mod Reduction
         //------------------------------------------------------------------------------
+        std::cout << "fully packed case - Running Approximate Mod Reduction..." << std::endl;
 
         // Evaluate Chebyshev series for the sine wave
         ctxtEnc  = cc->EvalChebyshevSeries(ctxtEnc, coefficients, coeffLowerBound, coeffUpperBound);
@@ -507,6 +516,7 @@ Ciphertext<DCRTPoly> FHECKKSRNS::EvalBootstrap(ConstCiphertext<DCRTPoly> ciphert
         //------------------------------------------------------------------------------
         // Running SlotToCoeff
         //------------------------------------------------------------------------------
+        std::cout << "fully packed case - Running SlotToCoeff..." << std::endl;
 
         // In the case of FLEXIBLEAUTO, we need one extra tower
         // TODO: See if we can remove the extra level in FLEXIBLEAUTO
@@ -526,6 +536,7 @@ Ciphertext<DCRTPoly> FHECKKSRNS::EvalBootstrap(ConstCiphertext<DCRTPoly> ciphert
         //------------------------------------------------------------------------------
         // Running PartialSum
         //------------------------------------------------------------------------------
+        std::cout << "sparsely packed case - Running PartialSum..." << std::endl;
 
         for (uint32_t j = 1; j < N / (2 * slots); j <<= 1) {
             auto temp = cc->EvalRotate(raised, j * slots);
@@ -539,6 +550,7 @@ Ciphertext<DCRTPoly> FHECKKSRNS::EvalBootstrap(ConstCiphertext<DCRTPoly> ciphert
         //------------------------------------------------------------------------------
         // Running CoeffsToSlots
         //------------------------------------------------------------------------------
+        std::cout << "sparsely packed case - Running CoeffsToSlots..." << std::endl;
 
         algo->ModReduceInternalInPlace(raised, BASE_NUM_LEVELS_TO_DROP);
 
@@ -573,6 +585,7 @@ Ciphertext<DCRTPoly> FHECKKSRNS::EvalBootstrap(ConstCiphertext<DCRTPoly> ciphert
         //------------------------------------------------------------------------------
         // Running Approximate Mod Reduction
         //------------------------------------------------------------------------------
+        std::cout << "sparsely packed case - Running Approximate Mod Reduction..." << std::endl;
 
         // Evaluate Chebyshev series for the sine wave
         ctxtEnc = cc->EvalChebyshevSeries(ctxtEnc, coefficients, coeffLowerBound, coeffUpperBound);
@@ -607,6 +620,7 @@ Ciphertext<DCRTPoly> FHECKKSRNS::EvalBootstrap(ConstCiphertext<DCRTPoly> ciphert
         //------------------------------------------------------------------------------
         // Running SlotsToCoeffs
         //------------------------------------------------------------------------------
+        std::cout << "sparsely packed case - Running SlotsToCoeffs..." << std::endl;
 
         // In the case of FLEXIBLEAUTO, we need one extra tower
         // TODO: See if we can remove the extra level in FLEXIBLEAUTO

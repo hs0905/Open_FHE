@@ -199,7 +199,7 @@ public:
         return m_PKE->Encrypt(plaintext, privateKey);
     }
 
-    virtual Ciphertext<Element> Encrypt(const Element& plaintext, const PublicKey<Element> publicKey) const {
+    virtual Ciphertext<Element> Encrypt(const Element plaintext, const PublicKey<Element> publicKey) const {
         VerifyPKEEnabled(__func__);
         //      if (!plaintext)
         //        OPENFHE_THROW(config_error, "Input plaintext is nullptr");

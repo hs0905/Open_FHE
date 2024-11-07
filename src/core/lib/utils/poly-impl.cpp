@@ -81,6 +81,61 @@ void PlainModMulScalar(uint64_t* res, const uint64_t* op1, uint64_t modulus, uin
     }
 }
 
+void PlainModMulEqScalar_one(uint64_t* op1, uint64_t modulus, uint64_t scalar, uint64_t pq0, uint64_t pq1) {
+    // uint64_t numerator[3]{ 0, 0, 1 };
+    // uint64_t quotient[3]{ 0, 0, 0 };
+    // divide_uint192_inplace(numerator, modulus, quotient);
+    // uint64_t pq0 = quotient[0];
+    // uint64_t pq1 = quotient[1];
+
+    scalar = scalar >= modulus ? scalar % modulus : scalar;
+
+    const uint64_t x = op1[0];
+    unsigned long long z[2];
+
+    uint128_t product = static_cast<uint128_t>(x) * scalar;
+    z[0] = static_cast<unsigned long long>(product);                        
+    z[1] = static_cast<unsigned long long>(product >> 64);
+
+    unsigned long long tmp1, tmp2[2], tmp3, carry;
+
+    // Multiply input and const_ratio
+    // Round 1
+    // multiply_uint64_hw64(z[0], pq0, &carry);
+    carry = static_cast<unsigned long long>(                                        
+    ((static_cast<uint128_t>(z[0])                              
+    * static_cast<uint128_t>(pq0)) >> 64));                    
+
+    // multiply_uint64(z[0], pq1, tmp2);
+    product = static_cast<uint128_t>(z[0]) * pq1;
+    tmp2[0] = static_cast<unsigned long long>(product);                        
+    tmp2[1] = static_cast<unsigned long long>(product >> 64);
+
+    // tmp3 = tmp2[1] + add_uint64(tmp2[0], carry, &tmp1);
+    tmp1 = tmp2[0] + carry;
+    tmp3 = tmp2[1] + static_cast<unsigned char>(tmp1 < tmp2[0]);
+
+    // Round 2
+    // multiply_uint64(z[1], pq0, tmp2);
+    product = static_cast<uint128_t>(z[1]) * pq0;
+    tmp2[0] = static_cast<unsigned long long>(product);                        
+    tmp2[1] = static_cast<unsigned long long>(product >> 64);
+
+    // carry = tmp2[1] + add_uint64(tmp1, tmp2[0], &tmp1);
+    tmp1 = tmp1 + tmp2[0];
+    carry = tmp2[1] + static_cast<unsigned char>(tmp1 < tmp2[0]);
+
+    // This is all we care about
+    tmp1 = z[1] * pq1 + tmp3 + carry;
+
+    // Barrett subtraction
+    tmp3 = z[0] - tmp1 * modulus;
+
+    // One more subtraction is enough
+    op1[0] = tmp3 >= modulus ? tmp3 - modulus : tmp3;
+    
+}
+
 void PlainModMulEqScalar(uint64_t* op1, uint64_t modulus, uint64_t scalar, size_t size) {
     uint64_t numerator[3]{ 0, 0, 1 };
     uint64_t quotient[3]{ 0, 0, 0 };

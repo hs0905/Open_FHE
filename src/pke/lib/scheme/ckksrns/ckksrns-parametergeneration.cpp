@@ -39,20 +39,20 @@ CKKS implementation. See https://eprint.iacr.org/2020/1118 for details.
 #include "scheme/ckksrns/ckksrns-cryptoparameters.h"
 #include "scheme/ckksrns/ckksrns-parametergeneration.h"
 
-namespace lbcrypto {
-
 #if NATIVEINT == 128 && !defined(__EMSCRIPTEN__)
-const size_t AUXMODSIZE = 119;
+size_t AUXMODSIZE = 119;
 #else
-const size_t AUXMODSIZE = 60;
+size_t AUXMODSIZE = 60;
 #endif
+
+namespace lbcrypto {
 
 bool ParameterGenerationCKKSRNS::ParamsGenCKKSRNS(std::shared_ptr<CryptoParametersBase<DCRTPoly>> cryptoParams,
                                                   usint cyclOrder, usint numPrimes, usint scalingModSize,
                                                   usint firstModSize, uint32_t numPartQ,
                                                   COMPRESSION_LEVEL mPIntBootCiphertextCompressionLevel) const {
     const auto cryptoParamsCKKSRNS = std::dynamic_pointer_cast<CryptoParametersCKKSRNS>(cryptoParams);
-
+    
     KeySwitchTechnique ksTech        = cryptoParamsCKKSRNS->GetKeySwitchTechnique();
     ScalingTechnique scalTech        = cryptoParamsCKKSRNS->GetScalingTechnique();
     EncryptionTechnique encTech      = cryptoParamsCKKSRNS->GetEncryptionTechnique();

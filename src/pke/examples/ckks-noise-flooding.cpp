@@ -76,8 +76,18 @@ CryptoContext<DCRTPoly> GetCryptoContext(CCParams<CryptoContextCKKSRNS>& cryptoP
  */
 Ciphertext<DCRTPoly> EncryptedComputation(CryptoContext<DCRTPoly>& cryptoContext, PublicKey<DCRTPoly> publicKey);
 
+void init_stat();
+void init_stat_no_workqueue();
+void print_stat();
+void print_stat_no_workqueue();
+void print_memory_stat();
+
 int main(int argc, char* argv[]) {
+    init_stat();
+    print_memory_stat();
     CKKSNoiseFloodingDemo();
+    print_stat();
+    print_memory_stat();
     return 0;
 }
 

@@ -49,7 +49,7 @@ void CryptoParametersCKKSRNS::PrecomputeCRTTables(KeySwitchTechnique ksTech, Sca
     // Don't run the function if it is not required
     if (!PrecomputeCRTTablesAfterDeserializaton())
         return;
-
+        
     CryptoParametersRNS::PrecomputeCRTTables(ksTech, scalTech, encTech, multTech, numPartQ, auxBits, extraBits);
 
     size_t sizeQ = GetElementParams()->GetParams().size();

@@ -422,7 +422,7 @@ Ciphertext<Element> LeveledSHEBase<Element>::EvalAutomorphism(ConstCiphertext<El
         OPENFHE_THROW(openfhe_error, "EvalKey for index [" + std::to_string(i) + "] is not found." + CALLER_INFO);
     }
     const std::vector<Element>& cv = ciphertext->GetElements();
-
+    
     // we already have checks on higher level?
     //  if (cv.size() < 2) {
     //    std::string errorMsg(

@@ -60,6 +60,11 @@ void inc_copy_from_inv_root_shadow_hbm_real();
 extern void PlainModMul(uint64_t* op1, const uint64_t* op2, uint64_t modulus, size_t size);
 extern void PlainModMulScalar(uint64_t* res, const uint64_t* op1, uint64_t modulus, uint64_t scalar, size_t size);
 extern void PlainModMulEqScalar(uint64_t* op1, uint64_t modulus, uint64_t scalar, size_t size);
+extern void PlainModMulEqScalar_one(uint64_t* op1, uint64_t modulus, uint64_t scalar, uint64_t pq0, uint64_t pq1);
+extern void divide_uint192_inplace(uint64_t *numerator, uint64_t denominator, uint64_t *quotient);
+
+extern std::chrono::duration<double, std::milli> elapsed_getwork;
+extern std::chrono::duration<double, std::milli> elapsed_work;
 
 #include "utils/custom_task.h"
 #include "utils/memory_tracking.h"
@@ -122,7 +127,7 @@ PolyImpl<VecType>& PolyImpl<VecType>::operator=(const PolyImpl& rhs) noexcept {
             ocb_entries_m.lock();
             rhs.m_values_shadow.ongoing_flag = false;
             ocb_entries_m.unlock();
-            // m_values_shadow = rhs.m_values_shadow;
+
         }
         return *this;
     }
@@ -134,7 +139,7 @@ PolyImpl<VecType>& PolyImpl<VecType>::operator=(const PolyImpl& rhs) noexcept {
             ocb_entries_m.lock();
             rhs.m_values_shadow.ongoing_flag = false;
             ocb_entries_m.unlock();
-            // m_values_shadow = rhs.m_values_shadow;
+
         }
         return *this;
     }
@@ -145,7 +150,6 @@ PolyImpl<VecType>& PolyImpl<VecType>::operator=(const PolyImpl& rhs) noexcept {
         ocb_entries_m.lock();
         rhs.m_values_shadow.ongoing_flag = false;
         ocb_entries_m.unlock();
-        // m_values_shadow = rhs.m_values_shadow;
     }
     return *this;
 }
@@ -276,8 +280,17 @@ void PolyImpl<VecType>::SetValuesShadow(const VecType& values, Format format) {
     if(m_values_shadow.shadow_sync_state == SHADOW_NOTEXIST) this->create_shadow();
     //need to modify..
     // *m_values_shadow.m_values = values;
-    ::memcpy(m_values_shadow.get_ptr(),&(values.m_data[0]),sizeof(uint64_t)*m_params->GetRingDimension());                
+    inc_copy_to_shadow_real((uint64_t)&m_values);
+    ::memcpy(m_values_shadow.get_ptr(),&(values.m_data[0]),sizeof(uint64_t)*m_params->GetRingDimension());              
     m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
+    if(compute_flag){
+        // std::cout << "ORIGIN --> OCB(SetValuesShadow)" << std::endl;
+        std::ofstream file("commandrecord.csv", std::ios::app);
+        if (file.is_open()) {
+            file << "D, " << "PCIE, " << (uint64_t)m_values_shadow.get_ptr() << ", " << (uint64_t)&m_values->m_data[0] << std::endl;
+            file.close();
+        }
+    }
 }
 
 template <typename VecType>
@@ -291,8 +304,17 @@ void PolyImpl<VecType>::SetValuesShadow(VecType&& values, Format format) {
     if(m_values_shadow.shadow_sync_state == SHADOW_NOTEXIST) this->create_shadow();
     //need to modify..
     // *m_values_shadow.m_values = std::move(values);
+    inc_copy_to_shadow_real((uint64_t)&m_values);
     ::memcpy(m_values_shadow.get_ptr(),&(values.m_data[0]),sizeof(uint64_t)*m_params->GetRingDimension());                
     m_values_shadow.shadow_sync_state = SHADOW_SYNCHED;
+    if(compute_flag){
+        // std::cout << "ORIGIN --> OCB(SetValuesShadow)" << std::endl;
+        std::ofstream file("commandrecord.csv", std::ios::app);
+        if (file.is_open()) {
+            file << "D, " << "PCIE, " << (uint64_t)m_values_shadow.get_ptr() << ", " << (uint64_t)&m_values->m_data[0] << std::endl;
+            file.close();
+        }
+    }
 }
 
 template <typename VecType>
@@ -318,6 +340,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Plus(const typename NativeVector:
     item->poly = (void*)this;
     item->poly2 = (void*)&tmp;
     item->param1 = element.ConvertToInt();
+    item->modulus = m_params->GetModulus().m_value;
 
     work_queue.addWork(item);
 
@@ -345,6 +368,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Minus(const typename NativeVector
     item->poly = (void*)this;
     item->poly2 = (void*)&tmp;
     item->param1 = element.ConvertToInt();
+    item->modulus = m_params->GetModulus().m_value;
 
     work_queue.addWork(item);
 
@@ -372,6 +396,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Times(const typename NativeVector
     item->poly = (void*)this;
     item->poly2 = (void*)&tmp;
     item->param1 = element.m_value;
+    item->modulus = m_params->GetModulus().m_value;
 
     work_queue.addWork(item);
     
@@ -420,6 +445,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Times(NativeInteger::SignedNative
         item->poly = (void*)this;
         item->poly2 = (void*)&tmp;
         item->param1 = -element;
+        item->modulus = m_params->GetModulus().m_value;
 
         work_queue.addWork(item);
         
@@ -436,6 +462,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Times(NativeInteger::SignedNative
         item->poly = (void*)this;
         item->poly2 = (void*)&tmp;
         item->param1 = elementReduced.m_value;
+        item->modulus = m_params->GetModulus().m_value;
 
         work_queue.addWork(item);
         
@@ -454,12 +481,13 @@ PolyImpl<VecType>& PolyImpl<VecType>::operator*=(const Integer& element) {
 }
 
 template <>
-PolyImpl<NativeVector>& PolyImpl<NativeVector>::operator*=(const Integer& element) {        
-    
+PolyImpl<NativeVector>& PolyImpl<NativeVector>::operator*=(const Integer& element) { 
+           
     CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_PlainModMulEqScalar);
 
     item->poly = this;
     item->param1 = element.m_value;
+    item->modulus = m_params->GetModulus().m_value;
 
     work_queue.addWork(item);
 
@@ -489,6 +517,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::Minus(const PolyImpl& rhs) const 
     item->poly = (void*)this;
     item->poly2 = (void*)&tmp;
     item->poly3 = (void*)&rhs;
+    item->modulus = m_params->GetModulus().m_value;
 
     work_queue.addWork(item);
     
@@ -542,6 +571,7 @@ PolyImpl<NativeVector>& PolyImpl<NativeVector>::operator+=(const PolyImpl& eleme
     item->poly = (void*)this;
     item->poly2 = (void*)&element;
     work_queue.addWork(item);
+    item->modulus = m_params->GetModulus().m_value;
     
     delete item;
    
@@ -568,6 +598,7 @@ PolyImpl<NativeVector>& PolyImpl<NativeVector>::operator-=(const PolyImpl& eleme
 
     item->poly = (void*)this;
     item->poly2 = (void*)&element;
+    item->modulus = m_params->GetModulus().m_value;
     work_queue.addWork(item);
     
     delete item;
@@ -675,6 +706,7 @@ PolyImpl<NativeVector> PolyImpl<NativeVector>::AutomorphismTransform(uint32_t k,
     item->poly2 = (void*)&tmp;
     item->ptr32_1 = (uint32_t*)&precomp[0];
     item->param1 = n;
+    item->modulus = m_params->GetModulus().m_value;
     work_queue.addWork(item);
     
     delete item;
@@ -739,12 +771,45 @@ void PolyImpl<NativeVector>::SwitchModulus(const Integer& modulus, const Integer
     item->param2 = halfQ;
     item->param3 = om;
     item->param4 = nm;
+    item->modulus = m_params->GetModulus().m_value;
     work_queue.addWork(item);
     
     delete item;
 
     auto c{m_params->GetCyclotomicOrder()};
     m_params = std::make_shared<PolyImpl::Params>(c, modulus, rootOfUnity, modulusArb, rootOfUnityArb);
+}
+
+template <>
+void PolyImpl<NativeVector>::bconv_pipe(const Integer& modulus, const Integer& rootOfUnity, const Integer& modulusArb,
+                                      const Integer& rootOfUnityArb,
+                                      const Integer& element,
+                                      PolyImpl& element2
+                                      ) {
+    auto size{m_values_shadow.m_values->size()};
+    auto halfQ{m_params->GetModulus().m_value >> 1};
+    auto om{m_params->GetModulus().m_value};
+    if (m_values != nullptr) { 
+        m_values->NativeVectorT::SetModulus(modulus);
+    }
+    auto nm{modulus.m_value};
+
+    CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_BCONV_PIPE);
+
+    // switch
+    item->poly = (void*)&element2;
+    item->param1 = size;
+    item->param2 = halfQ;
+    item->param3 = om;
+    item->param4 = nm;
+    // add_poly
+    item->poly2 = (void*)this;
+    // mult_scalar
+    item->param5 = element.m_value;
+
+    work_queue.addWork(item);
+    
+    delete item; // Clean up
 }
 
 template <typename VecType>
@@ -786,7 +851,7 @@ void PolyImpl<NativeVector>::SwitchFormat() {
         return;
     }
 
-    if (m_format != Format::COEFFICIENT) {        
+    if (m_format != Format::COEFFICIENT) {   
         m_format = Format::COEFFICIENT;
 
         CustomTaskItem* item = new CustomTaskItem(TASK_TYPE_SwitchFormatInverseTransform);
@@ -795,8 +860,9 @@ void PolyImpl<NativeVector>::SwitchFormat() {
         item->param1 = co;
         item->param2 = ru.ConvertToInt();
         item->param3 = m_params->GetModulus().m_value;
+        item->modulus = m_params->GetModulus().m_value;
         work_queue.addWork(item);
-        
+
         delete item;
 
         return;
@@ -810,6 +876,7 @@ void PolyImpl<NativeVector>::SwitchFormat() {
     item->param1 = co;
     item->param2 = ru.ConvertToInt();
     item->param3 = m_params->GetModulus().m_value;
+    item->modulus = m_params->GetModulus().m_value;
     work_queue.addWork(item);
     
     delete item;
@@ -984,15 +1051,12 @@ void consumer(WorkQueue& queue) {
     std::cout << "consumer thread: started" << std::endl;
     
     auto start = std::chrono::high_resolution_clock::now();
-    
-    std::chrono::duration<double, std::milli> elapsed_getwork(0.0);
-    std::chrono::duration<double, std::milli> elapsed_work(0.0);
 
     bool success = queue.getWork(items) ;
 
-    Logger logger("log.csv");
-    logger.logFunctionStart("exampleFunction");
-    logger.logFunctionEnd();
+    // Logger logger("log.csv");
+    // logger.logFunctionStart("exampleFunction");
+    // logger.logFunctionEnd();
 
     std::set<uint64_t> ntt_mod_set;
     std::set<uint64_t> intt_mod_set;
@@ -1013,9 +1077,11 @@ void consumer(WorkQueue& queue) {
 
             switch(item->task_type) {
                 case TASK_TYPE_PlainModMulEqScalar: {
+                        // if(compute_flag) std::cout << "TASK_TYPE_PlainModMulEqScalar" << std::endl;
                         ocb_entries_m.lock();
                         poly->m_values_shadow.ongoing_flag = true;
                         ocb_entries_m.unlock();
+                        // if(compute_flag) std::cout << "poly" << std::endl;
                         poly->copy_to_shadow();
                     
                         PlainModMulEqScalar(
@@ -1030,15 +1096,27 @@ void consumer(WorkQueue& queue) {
                         poly->m_values_shadow.ongoing_flag = false;
                         ocb_entries_m.unlock();
                 
-                        inc_compute_implemented();  
+                        inc_compute_implemented();
+                        inc_mult();
+                        if(compute_flag){
+                            std::ofstream file("commandrecord.csv", std::ios::app);
+                            if (file.is_open()) {
+                                file << "C, " << "Mult, " << (uint64_t)poly->m_values_shadow.get_ptr() << ", "
+                                << "0" << ", " << "0" << std::endl;
+                                file.close();
+                            }
+                        }
                     }
                     break;
                 case TASK_TYPE_PlusScalar: {
+                        // if(compute_flag) std::cout << "TASK_TYPE_PlusScalar" << std::endl;
                         ocb_entries_m.lock();
                         poly2->m_values_shadow.ongoing_flag = true;
                         poly->m_values_shadow.ongoing_flag = true;
                         ocb_entries_m.unlock();
+                        // if(compute_flag) std::cout << "poly2" << std::endl;
                         poly2->create_shadow();
+                        // if(compute_flag) std::cout << "poly" << std::endl;
                         poly->copy_to_shadow();
                         
                         uint64_t* op1       = poly->m_values_shadow.get_ptr();
@@ -1058,14 +1136,26 @@ void consumer(WorkQueue& queue) {
                         ocb_entries_m.unlock();
                         
                         inc_compute_implemented();
+                        inc_add();
+                        if(compute_flag){
+                            std::ofstream file("commandrecord.csv", std::ios::app);
+                            if (file.is_open()) {
+                                file << "C, " << "Add, " << (uint64_t)poly2->m_values_shadow.get_ptr() << ", "
+                                << (uint64_t)poly->m_values_shadow.get_ptr() << ", " << "0" << std::endl;
+                                file.close();
+                            }
+                        }
                     }
                     break;
                 case TASK_TYPE_MinusScalar: {
+                        // if(compute_flag) std::cout << "TASK_TYPE_MinusScalar" << std::endl;
                         ocb_entries_m.lock();
                         poly2->m_values_shadow.ongoing_flag = true;
                         poly->m_values_shadow.ongoing_flag = true;
                         ocb_entries_m.unlock();
+                        // if(compute_flag) std::cout << "poly2" << std::endl;
                         poly2->create_shadow();
+                        // if(compute_flag) std::cout << "poly" << std::endl;
                         poly->copy_to_shadow();
                         
                         uint64_t* op1       = poly->m_values_shadow.get_ptr();
@@ -1086,14 +1176,26 @@ void consumer(WorkQueue& queue) {
                         ocb_entries_m.unlock();
                         
                         inc_compute_implemented();
+                        inc_sub();
+                        if(compute_flag){
+                            std::ofstream file("commandrecord.csv", std::ios::app);
+                            if (file.is_open()) {
+                                file << "C, " << "Sub, " << (uint64_t)poly2->m_values_shadow.get_ptr() << ", "
+                                << (uint64_t)poly->m_values_shadow.get_ptr() << ", " << "0" << std::endl;
+                                file.close();
+                            }
+                        }
                     }
                     break;
                 case TASK_TYPE_PlainModMulScalar:   {
+                        // if(compute_flag) std::cout << "TASK_TYPE_PlainModMulScalar" << std::endl;
                         ocb_entries_m.lock();
                         poly2->m_values_shadow.ongoing_flag = true;
                         poly->m_values_shadow.ongoing_flag = true;
                         ocb_entries_m.unlock();
+                        // if(compute_flag) std::cout << "poly2" << std::endl;
                         poly2->create_shadow();
+                        // if(compute_flag) std::cout << "poly" << std::endl;
                         poly->copy_to_shadow();
 
                         PlainModMulScalar(
@@ -1110,16 +1212,29 @@ void consumer(WorkQueue& queue) {
                         poly->m_values_shadow.ongoing_flag = false;
                         ocb_entries_m.unlock();
                         inc_compute_implemented();
+                        inc_mult();
+                        if(compute_flag){
+                            std::ofstream file("commandrecord.csv", std::ios::app);
+                            if (file.is_open()) {
+                                file << "C, " << "Mult, " << (uint64_t)poly2->m_values_shadow.get_ptr() << ", "
+                                << (uint64_t)poly->m_values_shadow.get_ptr() << ", " << "0" << std::endl;
+                                file.close();
+                            }
+                        }
                     }
                     break;
                 case TASK_TYPE_Minus: {
+                        // if(compute_flag) std::cout << "TASK_TYPE_Minus" << std::endl;
                         ocb_entries_m.lock();
                         poly2->m_values_shadow.ongoing_flag = true;
                         poly->m_values_shadow.ongoing_flag = true;
                         poly3->m_values_shadow.ongoing_flag = true;
                         ocb_entries_m.unlock();
+                        // if(compute_flag) std::cout << "poly2" << std::endl;
                         poly2->create_shadow();
+                        // if(compute_flag) std::cout << "poly" << std::endl;
                         poly->copy_to_shadow(); 
+                        // if(compute_flag) std::cout << "poly3" << std::endl;
                         poly3->copy_to_shadow(); 
 
                         uint64_t* op1       = poly->m_values_shadow.get_ptr();
@@ -1140,15 +1255,27 @@ void consumer(WorkQueue& queue) {
                         poly->m_values_shadow.ongoing_flag = false;
                         poly3->m_values_shadow.ongoing_flag = false;
                         ocb_entries_m.unlock();
-                        inc_compute_implemented();                
+                        inc_compute_implemented();
+                        inc_sub();
+                        if(compute_flag){
+                            std::ofstream file("commandrecord.csv", std::ios::app);
+                            if (file.is_open()) {
+                                file << "C, " << "Sub, " << (uint64_t)poly2->m_values_shadow.get_ptr() << ", "
+                                << (uint64_t)poly->m_values_shadow.get_ptr() << ", " << (uint64_t)poly3->m_values_shadow.get_ptr() << std::endl;
+                                file.close();
+                            }
+                        }   
                     }   
                     break;
                 case TASK_TYPE_PlusInPlace: {
+                        // if(compute_flag) std::cout << "TASK_TYPE_PlusInPlace" << std::endl;
                         ocb_entries_m.lock();
                         poly->m_values_shadow.ongoing_flag = true;
                         poly2->m_values_shadow.ongoing_flag = true;
                         ocb_entries_m.unlock();
+                        // if(compute_flag) std::cout << "poly" << std::endl;
                         poly->copy_to_shadow();
+                        // if(compute_flag) std::cout << "poly2" << std::endl;
                         poly2->copy_to_shadow();
 
                         uint64_t* op1       = poly->m_values_shadow.get_ptr();
@@ -1167,15 +1294,27 @@ void consumer(WorkQueue& queue) {
                         poly2->m_values_shadow.ongoing_flag = false;
                         ocb_entries_m.unlock();
 
-                        inc_compute_implemented(); 
+                        inc_compute_implemented();
+                        inc_add();
+                        if(compute_flag){
+                            std::ofstream file("commandrecord.csv", std::ios::app);
+                            if (file.is_open()) {
+                                file << "C, " << "Add, " << (uint64_t)poly->m_values_shadow.get_ptr() << ", "
+                                << (uint64_t)poly2->m_values_shadow.get_ptr() << ", " << "0" << std::endl;
+                                file.close();
+                            }
+                        }
                     }
                     break;
                 case TASK_TYPE_MinusInPlace: {
+                        // if(compute_flag) std::cout << "TASK_TYPE_MinusInPlace" << std::endl;
                         ocb_entries_m.lock();
                         poly->m_values_shadow.ongoing_flag = true;
                         poly2->m_values_shadow.ongoing_flag = true;
                         ocb_entries_m.unlock();
+                        // if(compute_flag) std::cout << "poly" << std::endl;
                         poly->copy_to_shadow();
+                        // if(compute_flag) std::cout << "poly2" << std::endl;
                         poly2->copy_to_shadow();
 
                         uint64_t* op1       = poly->m_values_shadow.get_ptr();
@@ -1196,32 +1335,55 @@ void consumer(WorkQueue& queue) {
                         ocb_entries_m.unlock();
 
                         inc_compute_implemented();
+                        inc_sub();
+                        if(compute_flag){
+                            std::ofstream file("commandrecord.csv", std::ios::app);
+                            if (file.is_open()) {
+                                file << "C, " << "Sub, " << (uint64_t)poly->m_values_shadow.get_ptr() << ", "
+                                << (uint64_t)poly2->m_values_shadow.get_ptr() << ", " << "0" << std::endl;
+                                file.close();
+                            }
+                        }
                     }
                     break;
                 case TASK_TYPE_AutomorphismTransform: {
+                        // if(compute_flag) std::cout << "TASK_TYPE_AutomorphismTransform" << std::endl;
                         ocb_entries_m.lock();
                         poly->m_values_shadow.ongoing_flag = true;
                         poly2->m_values_shadow.ongoing_flag = true;
                         ocb_entries_m.unlock();
+                        // if(compute_flag) std::cout << "poly" << std::endl;
                         poly->copy_to_shadow();
-                        poly2->copy_to_shadow();
+                        // if(compute_flag) std::cout << "poly2" << std::endl;
+                        poly2->copy_to_shadow(); //////////////
                         
                         for (uint32_t j = 0; j < item->param1; ++j)
                             (*poly2->m_values_shadow.m_values)[j] = (*poly->m_values_shadow.m_values)[item->ptr32_1[j]];
 
-                        inc_compute_implemented();
-                        
                         poly2->indicate_modified_shadow();
                         ocb_entries_m.lock();
                         poly->m_values_shadow.ongoing_flag = false;
                         poly2->m_values_shadow.ongoing_flag = false;
                         ocb_entries_m.unlock();
+
+                        inc_compute_implemented();
+                        inc_auto();
+                        if(compute_flag){
+                            std::ofstream file("commandrecord.csv", std::ios::app);
+                            if (file.is_open()) {
+                                file << "C, " << "Auto, " << (uint64_t)poly2->m_values_shadow.get_ptr() << ", "
+                                << (uint64_t)poly->m_values_shadow.get_ptr() << ", " << "0" << std::endl;
+                                file.close();
+                            }
+                        }
                     }
                     break;
                 case TASK_TYPE_SwitchModulus: {
+                        // if(compute_flag) std::cout << "TASK_TYPE_SwitchModulus" << std::endl;
                         ocb_entries_m.lock();
                         poly->m_values_shadow.ongoing_flag = true;
                         ocb_entries_m.unlock();
+                        // if(compute_flag) std::cout << "poly" << std::endl;
                         poly->copy_to_shadow();
 
                         uint64_t* data = poly->m_values_shadow.get_ptr();
@@ -1239,6 +1401,15 @@ void consumer(WorkQueue& queue) {
                                 if (v > halfQ)
                                     v = v + diff;
                             }
+                            inc_add();
+                            if(compute_flag){
+                                std::ofstream file("commandrecord.csv", std::ios::app);
+                                if (file.is_open()) {
+                                    file << "C, " << "Add, " << (uint64_t)poly->m_values_shadow.get_ptr() << ", "
+                                    << "0" << ", " << "0" << std::endl;
+                                        file.close();
+                                }
+                            }
                         }
                         else {
                             auto diff{nm - (om % nm)};
@@ -1248,6 +1419,15 @@ void consumer(WorkQueue& queue) {
                                     v = v + diff;
                                 if (v >= nm)
                                     v = v % nm;
+                            }
+                            inc_mult();
+                            if(compute_flag){
+                                std::ofstream file("commandrecord.csv", std::ios::app);
+                                if (file.is_open()) {
+                                    file << "C, " << "Mult, " << (uint64_t)poly->m_values_shadow.get_ptr() << ", "
+                                    << "0" << ", " << "0" << std::endl;
+                                    file.close();
+                                }
                             }
                         }
 
@@ -1260,6 +1440,7 @@ void consumer(WorkQueue& queue) {
                     }
                     break;
                 case TASK_TYPE_SwitchFormatInverseTransform: {
+                        // if(compute_flag) std::cout << "TASK_TYPE_SwitchFormatInverseTransform" << std::endl;
                         uint64_t co = item->param1;
                         uint64_t ru = item->param2;
                         uint64_t modulus = item->param3;
@@ -1279,16 +1460,27 @@ void consumer(WorkQueue& queue) {
                         ocb_entries_m.lock();
                         poly->m_values_shadow.ongoing_flag = true;
                         ocb_entries_m.unlock();
+                        // if(compute_flag) std::cout << "poly" << std::endl;
                         poly->copy_to_shadow();
-                        ChineseRemainderTransformFTT<NativeVector>().InverseTransformFromBitReverseInPlace(NativeInteger::Integer(ru), co, poly->m_values_shadow.get_ptr(),poly->GetLength(),modulus);
+                        ChineseRemainderTransformFTT<NativeVector>().InverseTransformFromBitReverseInPlace(NativeInteger::Integer(ru), co, poly->m_values_shadow.get_ptr(),poly->m_values_shadow.m_values->size(),modulus);
                         poly->indicate_modified_shadow();
                         ocb_entries_m.lock();
                         poly->m_values_shadow.ongoing_flag = false;
                         ocb_entries_m.unlock();
                         inc_compute_implemented();
+                        inc_intt();
+                        if(compute_flag){
+                            std::ofstream file("commandrecord.csv", std::ios::app);
+                            if (file.is_open()) {
+                                file << "C, " << "INTT, " << (uint64_t)poly->m_values_shadow.get_ptr() << ", "
+                                    << "0" << ", " << "0" << std::endl;
+                                file.close();
+                            }
+                        }
                     }
                     break;
                 case TASK_TYPE_SwitchFormatForwardTransform: {
+                        // if(compute_flag) std::cout << "TASK_TYPE_SwitchFormatForwardTransform" << std::endl;
                         uint64_t co = item->param1;
                         uint64_t ru = item->param2;
                         uint64_t modulus = item->param3;
@@ -1308,21 +1500,34 @@ void consumer(WorkQueue& queue) {
                         ocb_entries_m.lock();
                         poly->m_values_shadow.ongoing_flag = true;
                         ocb_entries_m.unlock();
+                        // if(compute_flag) std::cout << "poly" << std::endl;
                         poly->copy_to_shadow();
-                        ChineseRemainderTransformFTT<NativeVector>().ForwardTransformToBitReverseInPlace(NativeInteger::Integer(ru), co, poly->m_values_shadow.get_ptr(),poly->GetLength(),modulus);
+                        ChineseRemainderTransformFTT<NativeVector>().ForwardTransformToBitReverseInPlace(NativeInteger::Integer(ru), co, poly->m_values_shadow.get_ptr(),poly->m_values_shadow.m_values->size(),modulus);
                         poly->indicate_modified_shadow();
                         ocb_entries_m.lock();
                         poly->m_values_shadow.ongoing_flag = false;
                         ocb_entries_m.unlock();
                         inc_compute_implemented();
+                        inc_ntt();
+                        if(compute_flag){
+                            std::ofstream file("commandrecord.csv", std::ios::app);
+                            if (file.is_open()) {
+                                file << "C, " << "NTT, " << (uint64_t)poly->m_values_shadow.get_ptr() << ", "
+                                    << "0" << ", " << "0" << std::endl;
+                                file.close();
+                            }
+                        }
                     }
                     break;
                 case TASK_TYPE_Plus: {
+                        // if(compute_flag) std::cout << "TASK_TYPE_Plus" << std::endl;
                         ocb_entries_m.lock();
                         poly2->m_values_shadow.ongoing_flag = true;
                         poly3->m_values_shadow.ongoing_flag = true;
                         ocb_entries_m.unlock();
-                        poly2->copy_to_shadow();
+                        // if(compute_flag) std::cout << "poly2" << std::endl;
+                        poly2->copy_to_shadow(); /////////////////////
+                        // if(compute_flag) std::cout << "poly3" << std::endl;
                         poly3->copy_to_shadow();
 
                         uint64_t* op1       = poly2->m_values_shadow.get_ptr();
@@ -1341,19 +1546,33 @@ void consumer(WorkQueue& queue) {
                         poly3->m_values_shadow.ongoing_flag = false;
                         ocb_entries_m.unlock();
                         inc_compute_implemented();
+                        inc_add();
+                        if(compute_flag){
+                            std::ofstream file("commandrecord.csv", std::ios::app);
+                            if (file.is_open()) {
+                                file << "C, " << "Add, " << (uint64_t)poly2->m_values_shadow.get_ptr() << ", "
+                                    << (uint64_t)poly3->m_values_shadow.get_ptr() << ", " << "0" << std::endl;
+                                file.close();
+                            }
+                        }
                     }
                     break;
                 case TASK_TYPE_Times: 
                 case TASK_TYPE_TimesNoCheck: {
+                        // if(compute_flag) std::cout << "TASK_TYPE_TimesNoCheck" << std::endl;
                         ocb_entries_m.lock();
                         poly2->m_values_shadow.ongoing_flag = true;
                         poly3->m_values_shadow.ongoing_flag = true;
                         ocb_entries_m.unlock();
+                        // if(compute_flag) std::cout << "poly2" << std::endl;
                         poly2->copy_to_shadow();
+                        // if(compute_flag) std::cout << "poly3" << std::endl;
                         poly3->copy_to_shadow();
 
                         uint64_t* op1 = poly2->m_values_shadow.get_ptr();
                         const uint64_t* op2 = poly3->m_values_shadow.get_ptr();
+
+                        // check_evk_map((uint64_t)&(poly3->m_values));
 
                         PlainModMul(
                             op1,
@@ -1367,19 +1586,33 @@ void consumer(WorkQueue& queue) {
                         poly2->m_values_shadow.ongoing_flag = false;
                         poly3->m_values_shadow.ongoing_flag = false;
                         ocb_entries_m.unlock();
-                        inc_compute_implemented();                    
+                        inc_compute_implemented();
+                        inc_mult();
+                        if(compute_flag){
+                            std::ofstream file("commandrecord.csv", std::ios::app);
+                            if (file.is_open()) {
+                                file << "C, " << "Mult, " << (uint64_t)poly2->m_values_shadow.get_ptr() << ", "
+                                << (uint64_t)poly3->m_values_shadow.get_ptr() << ", " << "0" << std::endl;
+                                file.close();
+                            }
+                        }         
                     }
                     break;
                 case TASK_TYPE_TimesInPlace: {
+                        // if(compute_flag) std::cout << "TASK_TYPE_TimesInPlace" << std::endl;
                         ocb_entries_m.lock();
                         poly->m_values_shadow.ongoing_flag = true;
                         poly2->m_values_shadow.ongoing_flag = true;
                         ocb_entries_m.unlock();
+                        // if(compute_flag) std::cout << "poly" << std::endl;
                         poly->copy_to_shadow();
+                        // if(compute_flag) std::cout << "poly2" << std::endl;
                         poly2->copy_to_shadow();
 
                         uint64_t* op1 = poly->m_values_shadow.get_ptr();
                         const uint64_t* op2 = poly2->m_values_shadow.get_ptr();
+
+                        // check_evk_map((uint64_t)&(poly2->m_values));
 
                         PlainModMul(
                             op1,
@@ -1394,12 +1627,118 @@ void consumer(WorkQueue& queue) {
                         poly2->m_values_shadow.ongoing_flag = false;
                         ocb_entries_m.unlock();
                         inc_compute_implemented();
+                        inc_mult();
+                        if(compute_flag){
+                            std::ofstream file("commandrecord.csv", std::ios::app);
+                            if (file.is_open()) {
+                                file << "C, " << "Mult, " << (uint64_t)poly->m_values_shadow.get_ptr() << ", "
+                                << (uint64_t)poly2->m_values_shadow.get_ptr() << ", " << "0" << std::endl;
+                                file.close();
+                            }
+                        }
+                    }
+                    break;
+                case TASK_TYPE_BCONV_PIPE: {
+                        // if(compute_flag) std::cout << "TASK_TYPE_BCONV_PIPE" << std::endl;
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = true;
+                        poly2->m_values_shadow.ongoing_flag = true;
+                        ocb_entries_m.unlock();
+                        // if(compute_flag) std::cout << "poly" << std::endl;
+                        poly->copy_to_shadow_(); /////////////
+                        // if(compute_flag) std::cout << "poly2" << std::endl;
+                        poly2->copy_to_shadow();
+                        
+                        uint64_t* op1  = poly->m_values_shadow.get_ptr();
+                        const uint64_t* data = poly2->m_values_shadow.get_ptr();
+
+                        uint64_t size = item->param1;
+                        uint64_t halfQ = item->param2;
+                        uint64_t om = item->param3;
+                        uint64_t nm = item->param4;
+                        uint64_t mult_scalar = item->param5;
+
+                        uint64_t modulus = poly->m_params->GetModulus().m_value;
+
+                        uint64_t numerator[3]{ 0, 0, 1 };
+                        uint64_t quotient[3]{ 0, 0, 0 };
+                        divide_uint192_inplace(numerator, nm, quotient);
+                        uint64_t pq0 = quotient[0];
+                        uint64_t pq1 = quotient[1];
+
+                        if (nm > om) {
+                            auto diff{nm - om};
+                            for (size_t i = 0; i < size; ++i) {
+                                uint64_t v[2];
+                                v[0] = data[i];
+                                v[1] = data[i];
+                                if (v[0] > halfQ)
+                                    v[0] = v[0] + diff;
+                                PlainModMulEqScalar_one(
+                                    &v[0],
+                                    nm,
+                                    mult_scalar,
+                                    pq0,
+                                    pq1
+                                );    
+                                uint64_t sum = op1[i] + v[0];
+                                op1[i] = sum >= modulus ? sum - modulus : sum;
+                            }
+                            inc_bconv_up();
+                            if(compute_flag){
+                                std::ofstream file("commandrecord.csv", std::ios::app);
+                                if (file.is_open()) {
+                                    file << "C, " << "Bconvup, " << (uint64_t)poly->m_values_shadow.get_ptr() << ", "
+                                    << (uint64_t)poly2->m_values_shadow.get_ptr() << ", " << "0" << std::endl;
+                                    file.close();
+                                }
+                            }
+                        }
+                        else {
+                            auto diff{nm - (om % nm)};
+                            for (size_t i = 0; i < size; ++i) {
+                                uint64_t v[2];
+                                v[0] = data[i];
+                                v[1] = data[i];
+                                if (v[0] > halfQ)
+                                    v[0] = v[0] + diff;
+                                if (v[0] >= nm)
+                                    v[0] = v[0] % nm;
+                                PlainModMulEqScalar_one(
+                                    &v[0],
+                                    nm,
+                                    mult_scalar,
+                                    pq0,
+                                    pq1
+                                );    
+                                uint64_t sum = op1[i] + v[0];
+                                op1[i] = sum >= modulus ? sum - modulus : sum;
+                            }
+                            inc_bconv_down();
+                            if(compute_flag){
+                                std::ofstream file("commandrecord.csv", std::ios::app);
+                                if (file.is_open()) {
+                                    file << "C, " << "Bconvdown, " << (uint64_t)poly->m_values_shadow.get_ptr() << ", "
+                                    << (uint64_t)poly2->m_values_shadow.get_ptr() << ", " << "0" << std::endl;
+                                    file.close();
+                                }
+                            }
+                        }
+                        
+                        poly->indicate_modified_shadow();
+                        ocb_entries_m.lock();
+                        poly->m_values_shadow.ongoing_flag = false;
+                        poly2->m_values_shadow.ongoing_flag = false;
+                        ocb_entries_m.unlock();
+
+                        inc_compute_implemented(); 
                     }
                     break;
                 default:
                     break;
             }
 
+            // std::cout << item->task_type << " ";
             // Mark as processed and notify the producer
             queue.workProcessed(item);
         }

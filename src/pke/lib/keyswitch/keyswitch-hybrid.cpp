@@ -43,9 +43,14 @@
 #include "scheme/ckksrns/ckksrns-cryptoparameters.h"
 #include "ciphertext.h"
 
+uint32_t BOOT_SCHEME = 0;
+
 void insert_evk_set(uint64_t evk_addr);
-bool check_evk_set(uint64_t evk_addr);
+void insert_evk_map(uint64_t evk_addr);
+void check_evk_map(uint64_t evk_addr);
 extern void clean_shadow_tracking_array(uint64_t m_values_shadow_addr);
+extern bool compute_flag;
+extern uint64_t total_sizeQlP;
 
 namespace lbcrypto {
 
@@ -57,6 +62,7 @@ EvalKey<DCRTPoly> KeySwitchHYBRID::KeySwitchGenInternal(const PrivateKey<DCRTPol
 EvalKey<DCRTPoly> KeySwitchHYBRID::KeySwitchGenInternal(const PrivateKey<DCRTPoly> oldKey,
                                                         const PrivateKey<DCRTPoly> newKey,
                                                         const EvalKey<DCRTPoly> ekPrev) const {
+    std::cout << "KeySwitchGenInternal" << std::endl;
     EvalKeyRelin<DCRTPoly> ek(std::make_shared<EvalKeyRelinImpl<DCRTPoly>>(newKey->GetCryptoContext()));
 
     const auto cryptoParams = std::dynamic_pointer_cast<CryptoParametersRNS>(newKey->GetCryptoParameters());
@@ -131,14 +137,23 @@ EvalKey<DCRTPoly> KeySwitchHYBRID::KeySwitchGenInternal(const PrivateKey<DCRTPol
         av[part] = a;
         bv[part] = b;
 
-        // for (size_t i = 0; i < sizeQP; ++i){
-        //     insert_evk_set((uint64_t)&(bv[part].GetElementAtIndex(i).m_values));
-        //     clean_shadow_tracking_array((uint64_t)&(bv[part].GetElementAtIndex(i).m_values_shadow));
-        //     bv[part].GetElementAtIndex(i).m_values_shadow.shadow_location = SHADOW_ON_OCB;
+        // if(BOOT_SCHEME > 1){
+            for (size_t i = 0; i < sizeQP; ++i){
+                // insert_evk_map((uint64_t)&(av[part].GetElementAtIndex(i).m_values));
+                // insert_evk_map((uint64_t)&(bv[part].GetElementAtIndex(i).m_values));
+                insert_evk_set((uint64_t)&(av[part].GetElementAtIndex(i).m_values));
+                av[part].GetElementAtIndex(i).copy_from_shadow();
+                insert_evk_set((uint64_t)&(bv[part].GetElementAtIndex(i).m_values));
+                bv[part].GetElementAtIndex(i).copy_from_shadow();
+                // clean_shadow_tracking_array((uint64_t)&(bv[part].GetElementAtIndex(i).m_values_shadow));
+                // bv[part].GetElementAtIndex(i).m_values_shadow.shadow_location = SHADOW_ON_OCB;
 
-        //     insert_evk_set((uint64_t)&(av[part].GetElementAtIndex(i).m_values));
-        //     clean_shadow_tracking_array((uint64_t)&(av[part].GetElementAtIndex(i).m_values_shadow));
-        //     av[part].GetElementAtIndex(i).m_values_shadow.shadow_location = SHADOW_ON_OCB;
+                // if(BOOT_SCHEME > 2){
+                //     insert_evk_set((uint64_t)&(av[part].GetElementAtIndex(i).m_values));
+                //     clean_shadow_tracking_array((uint64_t)&(av[part].GetElementAtIndex(i).m_values_shadow));
+                //     av[part].GetElementAtIndex(i).m_values_shadow.shadow_location = SHADOW_ON_OCB;
+                // }
+            }
         // }
     }
 
@@ -226,9 +241,7 @@ EvalKey<DCRTPoly> KeySwitchHYBRID::KeySwitchGenInternal(const PrivateKey<DCRTPol
 
 void KeySwitchHYBRID::KeySwitchInPlace(Ciphertext<DCRTPoly>& ciphertext, const EvalKey<DCRTPoly> ek) const {
     std::vector<DCRTPoly>& cv = ciphertext->GetElements();
-
     std::shared_ptr<std::vector<DCRTPoly>> ba = (cv.size() == 2) ? KeySwitchCore(cv[1], ek) : KeySwitchCore(cv[2], ek);
-
     cv[0].SetFormat((*ba)[0].GetFormat());
     cv[0] += (*ba)[0];
 
@@ -447,7 +460,6 @@ std::shared_ptr<std::vector<DCRTPoly>> KeySwitchHYBRID::EvalFastKeySwitchCore(
                                               cryptoParams->GetPHatInvModpPrecon(), cryptoParams->GetPHatModq(),
                                               cryptoParams->GetModqBarrettMu(), cryptoParams->GettInvModp(),
                                               cryptoParams->GettInvModpPrecon(), t, cryptoParams->GettModqPrecon());
-
     return std::make_shared<std::vector<DCRTPoly>>(std::initializer_list<DCRTPoly>{std::move(ct0), std::move(ct1)});
 }
 
@@ -477,20 +489,54 @@ std::shared_ptr<std::vector<DCRTPoly>> KeySwitchHYBRID::EvalFastKeySwitchCoreExt
             const auto& cji = cj.GetElementAtIndex(i);
             const auto& aji = aj.GetElementAtIndex(i);
             const auto& bji = bj.GetElementAtIndex(i);
-
+            
+            // if(compute_flag){
+            //     std::ofstream file("commandrecord.csv", std::ios::app);
+            //     if (file.is_open()) {
+            //         file << "cTilda0.SetElementAtIndex(i, cTilda0.GetElementAtIndex(i) + cji * bji);" << std::endl;
+            //         file.close();
+            //     }
+            // }
             cTilda0.SetElementAtIndex(i, cTilda0.GetElementAtIndex(i) + cji * bji);
+            // if(compute_flag){
+            //     std::ofstream file("commandrecord.csv", std::ios::app);
+            //     if (file.is_open()) {
+            //         file << "cTilda1.SetElementAtIndex(i, cTilda0.GetElementAtIndex(i) + cji * bji);" << std::endl;
+            //         file.close();
+            //     }
+            // }
             cTilda1.SetElementAtIndex(i, cTilda1.GetElementAtIndex(i) + cji * aji);
+            // cTilda0.SetElementAtIndex(i, cTilda0.GetElementAtIndex(i) + bji * cji);
+            // cTilda1.SetElementAtIndex(i, cTilda1.GetElementAtIndex(i) + aji * cji);
         }
         for (usint i = sizeQl, idx = sizeQ; i < sizeQlP; i++, idx++) {
             const auto& cji = cj.GetElementAtIndex(i);
             const auto& aji = aj.GetElementAtIndex(idx);
             const auto& bji = bj.GetElementAtIndex(idx);
 
+            // if(compute_flag){
+            //     std::ofstream file("commandrecord.csv", std::ios::app);
+            //     if (file.is_open()) {
+            //         file << "cTilda0.SetElementAtIndex(i, cTilda0.GetElementAtIndex(i) + cji * bji);" << std::endl;
+            //         file.close();
+            //     }
+            // }
             cTilda0.SetElementAtIndex(i, cTilda0.GetElementAtIndex(i) + cji * bji);
+            // if(compute_flag){
+            //     std::ofstream file("commandrecord.csv", std::ios::app);
+            //     if (file.is_open()) {
+            //         file << "cTilda1.SetElementAtIndex(i, cTilda0.GetElementAtIndex(i) + cji * bji);" << std::endl;
+            //         file.close();
+            //     }
+            // }
             cTilda1.SetElementAtIndex(i, cTilda1.GetElementAtIndex(i) + cji * aji);
+            // cTilda0.SetElementAtIndex(i, cTilda0.GetElementAtIndex(i) + bji * cji);
+            // cTilda1.SetElementAtIndex(i, cTilda1.GetElementAtIndex(i) + aji * cji);
         }
     }
 
+    total_sizeQlP += sizeQlP;
+    
     return std::make_shared<std::vector<DCRTPoly>>(
         std::initializer_list<DCRTPoly>{std::move(cTilda0), std::move(cTilda1)});
 }

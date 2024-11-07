@@ -192,7 +192,6 @@ public:
             OPENFHE_THROW(math_error, "Modulus missmatch");
         DCRTPolyType tmp(m_params, m_format);
 // // #pragma omp parallel for num_threads(OpenFHEParallelControls.GetThreadLimit(size))
-        // std::cout << size << std::endl;
         for (size_t i = 0; i < size; ++i)
             tmp.m_vectors[i] = m_vectors[i].TimesNoCheck(rhs.m_vectors[i]);
         return tmp;
