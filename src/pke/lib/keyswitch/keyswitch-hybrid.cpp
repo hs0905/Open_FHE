@@ -1,38 +1,3 @@
-//==================================================================================
-// BSD 2-Clause License
-//
-// Copyright (c) 2014-2022, NJIT, Duality Technologies Inc. and other contributors
-//
-// All rights reserved.
-//
-// Author TPOC: contact@openfhe.org
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// 1. Redistributions of source code must retain the above copyright notice, this
-//    list of conditions and the following disclaimer.
-//
-// 2. Redistributions in binary form must reproduce the above copyright notice,
-//    this list of conditions and the following disclaimer in the documentation
-//    and/or other materials provided with the distribution.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//==================================================================================
-
-/**
- * Hybrid key switching implementation. See
- * Appendix of https://eprint.iacr.org/2021/204 for details.
- */
 #define PROFILE
 
 #include "keyswitch/keyswitch-hybrid.h"
@@ -49,8 +14,8 @@ void insert_evk_set(uint64_t evk_addr);
 void insert_evk_map(uint64_t evk_addr);
 void check_evk_map(uint64_t evk_addr);
 extern void clean_shadow_tracking_array(uint64_t m_values_shadow_addr);
-extern bool compute_flag;
-extern uint64_t total_sizeQlP;
+extern bool         compute_flag;
+extern uint64_t     total_sizeQlP;
 
 namespace lbcrypto {
 
@@ -65,8 +30,7 @@ EvalKey<DCRTPoly> KeySwitchHYBRID::KeySwitchGenInternal(const PrivateKey<DCRTPol
     std::cout << "KeySwitchGenInternal" << std::endl;
     EvalKeyRelin<DCRTPoly> ek(std::make_shared<EvalKeyRelinImpl<DCRTPoly>>(newKey->GetCryptoContext()));
 
-    const auto cryptoParams = std::dynamic_pointer_cast<CryptoParametersRNS>(newKey->GetCryptoParameters());
-
+    const auto cryptoParams                  = std::dynamic_pointer_cast<CryptoParametersRNS>(newKey->GetCryptoParameters());
     const std::shared_ptr<ParmType> paramsQ  = cryptoParams->GetElementParams();
     const std::shared_ptr<ParmType> paramsQP = cryptoParams->GetParamsQP();
 
@@ -110,8 +74,8 @@ EvalKey<DCRTPoly> KeySwitchHYBRID::KeySwitchGenInternal(const PrivateKey<DCRTPol
     size_t numPerPartQ               = cryptoParams->GetNumPerPartQ();
 
     for (size_t part = 0; part < numPartQ; ++part) {
-        DCRTPoly a = (ekPrev == nullptr) ? DCRTPoly(dug, paramsQP, Format::EVALUATION) :  // single-key HE
-                                           ekPrev->GetAVector()[part];                                      // threshold HE
+        DCRTPoly a = (ekPrev == nullptr) ? DCRTPoly(dug, paramsQP, Format::EVALUATION) :    // single-key HE
+                                           ekPrev->GetAVector()[part];                      // threshold HE
         DCRTPoly e(dgg, paramsQP, Format::EVALUATION);
         DCRTPoly b(paramsQP, Format::EVALUATION, true);
 
@@ -133,28 +97,14 @@ EvalKey<DCRTPoly> KeySwitchHYBRID::KeySwitchGenInternal(const PrivateKey<DCRTPol
                 b.SetElementAtIndex(i, -ai * sNewi + PModq[i] * sOldi + ns * ei);
             }
         }
-
         av[part] = a;
         bv[part] = b;
-
-        // if(BOOT_SCHEME > 1){
-            for (size_t i = 0; i < sizeQP; ++i){
-                // insert_evk_map((uint64_t)&(av[part].GetElementAtIndex(i).m_values));
-                // insert_evk_map((uint64_t)&(bv[part].GetElementAtIndex(i).m_values));
-                insert_evk_set((uint64_t)&(av[part].GetElementAtIndex(i).m_values));
-                av[part].GetElementAtIndex(i).copy_from_shadow();
-                insert_evk_set((uint64_t)&(bv[part].GetElementAtIndex(i).m_values));
-                bv[part].GetElementAtIndex(i).copy_from_shadow();
-                // clean_shadow_tracking_array((uint64_t)&(bv[part].GetElementAtIndex(i).m_values_shadow));
-                // bv[part].GetElementAtIndex(i).m_values_shadow.shadow_location = SHADOW_ON_OCB;
-
-                // if(BOOT_SCHEME > 2){
-                //     insert_evk_set((uint64_t)&(av[part].GetElementAtIndex(i).m_values));
-                //     clean_shadow_tracking_array((uint64_t)&(av[part].GetElementAtIndex(i).m_values_shadow));
-                //     av[part].GetElementAtIndex(i).m_values_shadow.shadow_location = SHADOW_ON_OCB;
-                // }
-            }
-        // }
+        for (size_t i = 0; i < sizeQP; ++i){
+            insert_evk_set((uint64_t)&(av[part].GetElementAtIndex(i).m_values));
+            av[part].GetElementAtIndex(i).copy_from_shadow();
+            insert_evk_set((uint64_t)&(bv[part].GetElementAtIndex(i).m_values));
+            bv[part].GetElementAtIndex(i).copy_from_shadow();
+        }
     }
 
     ek->SetAVector(std::move(av));
@@ -175,10 +125,9 @@ EvalKey<DCRTPoly> KeySwitchHYBRID::KeySwitchGenInternal(const PrivateKey<DCRTPol
     usint sizeQ  = paramsQ->GetParams().size();
     usint sizeQP = paramsQP->GetParams().size();
 
-    DCRTPoly sOld = oldKey->GetPrivateElement();
-
-    DCRTPoly newp0 = newKey->GetPublicElements().at(0);
-    DCRTPoly newp1 = newKey->GetPublicElements().at(1);
+    DCRTPoly sOld   = oldKey->GetPrivateElement();    
+    DCRTPoly newp0  = newKey->GetPublicElements().at(0);
+    DCRTPoly newp1  = newKey->GetPublicElements().at(1);
 
     const auto ns      = cryptoParams->GetNoiseScale();
     const DggType& dgg = cryptoParams->GetDiscreteGaussianGenerator();
@@ -489,54 +438,18 @@ std::shared_ptr<std::vector<DCRTPoly>> KeySwitchHYBRID::EvalFastKeySwitchCoreExt
             const auto& cji = cj.GetElementAtIndex(i);
             const auto& aji = aj.GetElementAtIndex(i);
             const auto& bji = bj.GetElementAtIndex(i);
-            
-            // if(compute_flag){
-            //     std::ofstream file("commandrecord.csv", std::ios::app);
-            //     if (file.is_open()) {
-            //         file << "cTilda0.SetElementAtIndex(i, cTilda0.GetElementAtIndex(i) + cji * bji);" << std::endl;
-            //         file.close();
-            //     }
-            // }
             cTilda0.SetElementAtIndex(i, cTilda0.GetElementAtIndex(i) + cji * bji);
-            // if(compute_flag){
-            //     std::ofstream file("commandrecord.csv", std::ios::app);
-            //     if (file.is_open()) {
-            //         file << "cTilda1.SetElementAtIndex(i, cTilda0.GetElementAtIndex(i) + cji * bji);" << std::endl;
-            //         file.close();
-            //     }
-            // }
             cTilda1.SetElementAtIndex(i, cTilda1.GetElementAtIndex(i) + cji * aji);
-            // cTilda0.SetElementAtIndex(i, cTilda0.GetElementAtIndex(i) + bji * cji);
-            // cTilda1.SetElementAtIndex(i, cTilda1.GetElementAtIndex(i) + aji * cji);
         }
         for (usint i = sizeQl, idx = sizeQ; i < sizeQlP; i++, idx++) {
             const auto& cji = cj.GetElementAtIndex(i);
             const auto& aji = aj.GetElementAtIndex(idx);
             const auto& bji = bj.GetElementAtIndex(idx);
-
-            // if(compute_flag){
-            //     std::ofstream file("commandrecord.csv", std::ios::app);
-            //     if (file.is_open()) {
-            //         file << "cTilda0.SetElementAtIndex(i, cTilda0.GetElementAtIndex(i) + cji * bji);" << std::endl;
-            //         file.close();
-            //     }
-            // }
             cTilda0.SetElementAtIndex(i, cTilda0.GetElementAtIndex(i) + cji * bji);
-            // if(compute_flag){
-            //     std::ofstream file("commandrecord.csv", std::ios::app);
-            //     if (file.is_open()) {
-            //         file << "cTilda1.SetElementAtIndex(i, cTilda0.GetElementAtIndex(i) + cji * bji);" << std::endl;
-            //         file.close();
-            //     }
-            // }
             cTilda1.SetElementAtIndex(i, cTilda1.GetElementAtIndex(i) + cji * aji);
-            // cTilda0.SetElementAtIndex(i, cTilda0.GetElementAtIndex(i) + bji * cji);
-            // cTilda1.SetElementAtIndex(i, cTilda1.GetElementAtIndex(i) + aji * cji);
         }
     }
-
-    total_sizeQlP += sizeQlP;
-    
+    total_sizeQlP += sizeQlP;    
     return std::make_shared<std::vector<DCRTPoly>>(
         std::initializer_list<DCRTPoly>{std::move(cTilda0), std::move(cTilda1)});
 }
